@@ -1,5 +1,15 @@
 # @jingler/desktop
 
+## 0.16.0
+
+### Minor Changes
+
+- f080059: Watch an agent's running command in a read-only terminal tab: click "Watch in terminal" on any Bash card to follow test runs live and decide when to stop the agent.
+
+### Patch Changes
+
+- @jingler/plannotator-ext@0.16.0
+
 ## 0.15.1
 
 ### Patch Changes
