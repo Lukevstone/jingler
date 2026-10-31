@@ -148,6 +148,15 @@ describe("parseStringifiedArguments", () => {
       .toEqual({ id: "q", questions: [{ question: "x" }] })
   })
 
+  it("coerces numeric strings where the schema wants an integer or number", () => {
+    const numeric = { type: "object", properties: { limit: { type: "integer" }, ratio: { type: "number" }, name: { type: "string" } } }
+    expect(parseStringifiedArguments(numeric, { limit: "6", ratio: "0.5", name: "7" }))
+      .toEqual({ limit: 6, ratio: 0.5, name: "7" })
+    // Not an integer, or not numeric at all: left for the validator to reject.
+    expect(parseStringifiedArguments(numeric, { limit: "1.5" })).toEqual({ limit: "1.5" })
+    expect(parseStringifiedArguments(numeric, { limit: "six" })).toEqual({ limit: "six" })
+  })
+
   it("parses a JSON-string object where a union allows an object", () => {
     expect(parseStringifiedArguments(schema, { config: '{"a":1}' })).toEqual({ config: { a: 1 } })
   })

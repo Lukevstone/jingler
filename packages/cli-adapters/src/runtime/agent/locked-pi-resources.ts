@@ -6,10 +6,12 @@ import {
 } from "@earendil-works/pi-coding-agent"
 import { Data, Effect } from "effect"
 import { PI_SUBAGENTS_EXTENSION_PATH } from "../subagents/pi-subagents-bootstrap.js"
+import { SUBAGENT_MODEL_POLICY_PATH, subagentModelPolicy } from "../subagents/subagent-model-policy.js"
 export { PONYTAIL_EXTENSION_PATH, PONYTAIL_SKILLS_PATH } from "../resources/ponytail-resources.js"
 
 const ALLOWED_EXTENSION_PATHS = new Set([
-  PI_SUBAGENTS_EXTENSION_PATH
+  PI_SUBAGENTS_EXTENSION_PATH,
+  SUBAGENT_MODEL_POLICY_PATH
 ])
 
 export class PiResourceError extends Data.TaggedError("PiResourceError")<{
@@ -53,7 +55,7 @@ export const createLockedPiResources = (
         additionalSkillPaths: [],
         additionalPromptTemplatePaths: [],
         additionalThemePaths: [],
-        extensionFactories: [],
+        extensionFactories: [subagentModelPolicy],
         systemPromptOverride: () => input.systemPrompt,
         appendSystemPromptOverride: () => [],
         extensionsOverride: (base) => ({

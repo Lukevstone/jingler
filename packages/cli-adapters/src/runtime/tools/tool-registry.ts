@@ -272,13 +272,28 @@ const parseStructured = (value: unknown, wanted: ReadonlyArray<string>): unknown
  * schema validation with "must be array" and can push the model to abandon
  * the tool call and print the payload as assistant text instead. Parse a
  * top-level string into its JSON value only when the tool's schema wants
- * array/object there; anything that doesn't parse to that shape is left for
- * the decoder to reject as before.
+ * array/object there, and a numeric string into a number where it wants an
+ * integer/number (`maxResults: "6"`); anything else is left for the decoder
+ * to reject as before.
  */
+const schemaTypes = (schema: JsonSchemaNode | undefined): ReadonlyArray<unknown> =>
+  schema === undefined ? [] : [...(Array.isArray(schema.type) ? schema.type : [schema.type]), ...(schema.anyOf ?? []).flatMap(schemaTypes)]
+
+/** `"6"` → 6 where the schema wants a number and would never accept the string. */
+const parseNumeric = (value: unknown, schema: JsonSchemaNode | undefined): unknown => {
+  if (typeof value !== "string" || !/^-?\d+(\.\d+)?$/u.test(value.trim())) return value
+  const types = schemaTypes(schema)
+  if (types.includes("string")) return value
+  const parsed = Number(value)
+  if (types.includes("number")) return parsed
+  return types.includes("integer") && Number.isInteger(parsed) ? parsed : value
+}
+
 export const normalizeStringifiedArguments = (schema: JsonSchemaNode, args: unknown): unknown => {
   const properties = schema.properties
   if (typeof args !== "object" || args === null || Array.isArray(args) || properties === undefined) return args
-  const entries = Object.entries(args).map(([key, value]) => [key, value, parseStructured(value, structuredTypes(properties[key]))] as const)
+  const entries = Object.entries(args).map(([key, value]) =>
+    [key, value, parseNumeric(parseStructured(value, structuredTypes(properties[key])), properties[key])] as const)
   if (entries.every(([, before, after]) => before === after)) return args
   return Object.fromEntries(entries.map(([key, , after]) => [key, after]))
 }
