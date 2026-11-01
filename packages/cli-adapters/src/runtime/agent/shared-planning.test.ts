@@ -55,11 +55,25 @@ const setup = async () => {
   }); return state!.review!.reviewId }
   return { root, context, events, permitted, observed, wrap, run, projections, review }
 }
-const call = (registry: ToolRegistry, spec: AgentRunSpec, context: AgentRuntimeContext, id: string, parameters: unknown, signal?: AbortSignal) => executeRegistryTool({
-  registry, spec, context, id, parameters, signal, allowed: true, toolCallId: crypto.randomUUID(), onUpdate: undefined
-})
+// Submitting needs plan mode; mirror jingler_set_work_mode entering it first.
+const call = async (registry: ToolRegistry, spec: AgentRunSpec, context: AgentRuntimeContext, id: string, parameters: unknown, signal?: AbortSignal) => {
+  if (id === "plannotator_submit_plan") await context.planning?.enterPlanning?.()
+  return executeRegistryTool({ registry, spec, context, id, parameters, signal, allowed: true, toolCallId: crypto.randomUUID(), onUpdate: undefined })
+}
 
 describe("shared harness planning", () => {
+  it("blocks submitting from an idle build turn", async () => {
+    const f = await setup()
+    const runtime = f.wrap(async function* (registry, spec, context) {
+      const result = await executeRegistryTool({ registry, spec, context, id: "plannotator_submit_plan", parameters: { filePath: "plan.md" }, signal: new AbortController().signal, allowed: true, toolCallId: "c", onUpdate: undefined })
+      expect(result.details.status).toBe("error")
+      expect(JSON.stringify(result.details)).toContain("jingler_set_work_mode")
+      yield done
+    })
+    await f.run(runtime)
+    expect(f.projections().at(-1)?.review ?? null).toBeNull()
+  })
+
   it.each(["pi", "claude", "codex", "opencode"] as const)("%s opens the plan, awaits operator review, and persists tracked marker progress", async (runtimeId) => {
     const f = await setup()
     const spec = specFor(f.root, runtimeId)

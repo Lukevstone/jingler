@@ -60,6 +60,8 @@ export interface AgentRuntimeContext {
     readonly execute: (filePath: string, submit: boolean, signal: AbortSignal) => Promise<unknown>
     /** True once the operator approved this cycle's plan. */
     readonly planApproved?: () => boolean
+    /** Start a planning cycle mid-turn (the agent switched into plan). */
+    readonly enterPlanning?: () => Promise<void>
   }
   /** Main-process-only capability attachments for this run. */
   readonly mcp?: JinglerMcpAttachments
@@ -82,7 +84,7 @@ export interface AgentRuntimeContext {
   ) => Effect.Effect<PeerAgentMessageResult>
   /** Multi-repo session state; enables `switch_checkout` and makes tool cwd follow the active checkout. */
   readonly checkouts?: CheckoutHost
-  /** Present only when the chat has Auto switching on; enables `jingler_set_work_mode`. */
+  /** Enables `jingler_set_work_mode`. */
   readonly workModeHost?: WorkModeHost
 }
 

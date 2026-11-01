@@ -22,7 +22,7 @@ const IGNORE = new Set([
 ])
 
 /** Parse "owner/repo" from a GitHub remote URL (ssh or https), else null. */
-const parseGithubSlug = (url: string | null): string | null => {
+export const parseGithubSlug = (url: string | null): string | null => {
   if (url === null) return null
   const match = url.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/i)
   return match?.[1] ?? null

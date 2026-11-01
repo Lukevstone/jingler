@@ -302,14 +302,18 @@ test("adds a project creates a workspace selects capabilities and completes a Pl
     checkout: "Worktree",
     task: "[[plan]] refactor auth to a TokenStore"
   })
+  // The session starts in Build without Auto switching, so the agent asks before entering plan.
+  await expect(launched.window.getByText("Switch to plan mode?", { exact: false })).toBeVisible({ timeout: 20_000 })
+  await launched.window.getByText("Switch to plan", { exact: true }).click()
+  await launched.window.getByRole("button", { name: /Submit/ }).click()
 
   await expect.poll(() => {
     const persisted = JSON.parse(readFileSync(join(launched.home, "jingler", "sessions.json"), "utf8"))[0]
     return persisted.chats[0].modelId
   }).toBe("jingler-e2e/eval-model")
 
-  await openModelSettings(launched.window)
-  await expect(launched.window.getByRole("button", { name: /^Model:/ })).toBeVisible()
+  // The model button was checked before the workspace existed; once the plan
+  // review is split beside the chat, the narrow composer doesn't show it.
   const sessions = JSON.parse(readFileSync(join(launched.home, "jingler", "sessions.json"), "utf8"))
   const worktreePath = sessions[0].worktreePath as string
   // Plannotator owns the plan as a markdown file in the worktree; the native

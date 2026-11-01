@@ -117,7 +117,7 @@ export interface AgentContext {
   readonly registerTurnSteer?: (steer: SteerTurn | null) => Effect.Effect<void>
   /** Multi-repo checkout state for this turn; absent for sessions without a project registry. */
   readonly checkouts?: CheckoutHost
-  /** Present only when the chat has Auto switching on; enables `jingler_set_work_mode`. */
+  /** Enables `jingler_set_work_mode`. */
   readonly workModeHost?: WorkModeHost
 }
 

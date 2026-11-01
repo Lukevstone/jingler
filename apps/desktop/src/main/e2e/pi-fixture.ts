@@ -650,9 +650,22 @@ const planModeResponse = (context: PiContext): ReturnType<typeof fauxAssistantMe
   if (lastMessage?.role === "toolResult" && lastMessage.toolName === SUBMIT_PLAN_TOOL) {
     return submitResultResponse(context, toolResultText(lastMessage), submitCount)
   }
-  if (lastMessage?.role === "toolResult" && lastMessage.toolName === WRITE_TOOL && lastMessage.toolCallId !== "plannotator-escape") {
-    return callTool(SUBMIT_PLAN_TOOL, { filePath: "PLAN.md" }, `plannotator-submit-${submitCount + 1}`)
+  const wrotePlan = lastMessage?.role === "toolResult" && lastMessage.toolName === WRITE_TOOL && lastMessage.toolCallId !== "plannotator-escape"
+  if (wrotePlan || (lastMessage?.role === "toolResult" && lastMessage.toolName === WORK_MODE_TOOL)) {
+    return submitPlanResponse(context, submitCount)
   }
+  return planWriteResponse(context, currentPlanMessages)
+}
+
+const WORK_MODE_TOOL = "jingler_set_work_mode"
+
+// Submitting needs plan mode: switch once first (a no-op when the turn already started in plan).
+const submitPlanResponse = (context: PiContext, submitCount: number): ReturnType<typeof fauxAssistantMessage> =>
+  submitCount === 0 && recentToolResultCount(context, WORK_MODE_TOOL) === 0
+    ? callTool(WORK_MODE_TOOL, { mode: "plan", reason: "multi-step change" }, "plan-switch-1")
+    : callTool(SUBMIT_PLAN_TOOL, { filePath: "PLAN.md" }, `plannotator-submit-${submitCount + 1}`)
+
+const planWriteResponse = (context: PiContext, currentPlanMessages: ReadonlyArray<string>): ReturnType<typeof fauxAssistantMessage> => {
   // [[escape]]: first attempt a write outside the plan file; plan mode must block it.
   const lastUser = context.messages.findLastIndex((message) => message.role === "user")
   const escaped = context.messages.slice(lastUser).some((message) => message.role === "toolResult" && message.toolCallId === "plannotator-escape")

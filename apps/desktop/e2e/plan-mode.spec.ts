@@ -762,6 +762,23 @@ test("agent enters plan via tool", async ({ launchApp }) => {
   expect(existsSync(join(launched.repoPath, "AGENTS.md"))).toBe(false)
 })
 
+test("without Auto, the agent asks before entering plan", async ({ launchApp }) => {
+  const launched = await launchPlanMode(launchApp)
+  const { window } = launched
+  const skipImport = window.getByRole("button", { name: "Skip import" })
+  if (await skipImport.isVisible()) await skipImport.click()
+  const composer = window.getByPlaceholder(COMPOSER_PLACEHOLDER)
+  await composer.click()
+  await composer.fill("[[switch-plan]] refactor auth")
+  await composer.press("Enter")
+  await expect(window.getByText("Switch to plan mode? large refactor")).toBeVisible({ timeout: 30_000 })
+  await window.getByText("Switch to plan", { exact: true }).click()
+  await window.getByRole("button", { name: /Submit/ }).click()
+  await expect(window.locator("[data-mode='plan']")).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => savedChat(launched)?.workMode, { timeout: 30_000 }).toBe("plan")
+  expect(existsSync(join(launched.repoPath, "AGENTS.md"))).toBe(false)
+})
+
 test("agent cannot leave plan without an approved plan", async ({ launchApp }) => {
   const launched = await launchPlanMode(launchApp)
   const { window } = launched
