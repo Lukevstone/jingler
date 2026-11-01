@@ -11,19 +11,21 @@ export interface WorkModeHost {
   /** Auto switching on: switch without asking. Off: the operator confirms entering plan. */
   readonly autoSwitch: boolean
   readonly approvalIsAuto: () => boolean
-  /** Claims one of this turn's switches; false once the limit is spent. */
-  readonly reserveSwitch: () => boolean
+  /** False once this turn's switch allowance is spent. */
+  readonly canSwitch: () => boolean
+  /** Spends one switch; called only for an accepted transition. */
+  readonly takeSwitch: () => void
 }
 
 const assertCanSwitch = (context: AgentRuntimeContext, host: WorkModeHost, mode: "plan" | "build"): void => {
   if (mode === "build" && !host.approvalIsAuto() && context.planning?.planApproved?.() !== true) {
     throw new ToolError("forbidden", "Cannot switch to build: submit the plan with plannotator_submit_plan for approval first")
   }
-  if (!host.reserveSwitch()) throw new ToolError("forbidden", "Work mode switch limit reached for this turn")
+  if (!host.canSwitch()) throw new ToolError("forbidden", "Work mode switch limit reached for this turn")
 }
 
 /** Asks the operator to enter plan; null when confirmed, otherwise the decline reason. */
-const confirmPlan = async (context: AgentRuntimeContext, reason: string): Promise<string | null> => {
+const confirmPlan = async (context: AgentRuntimeContext, reason: string, signal: AbortSignal): Promise<string | null> => {
   const [answer] = await Effect.runPromise(context.askQuestion({
     id: "work-mode-plan",
     questions: [{
@@ -35,7 +37,9 @@ const confirmPlan = async (context: AgentRuntimeContext, reason: string): Promis
       ],
       multiSelect: false
     }]
-  }))
+  }), { signal })
+  // A late answer to a cancelled call must not switch modes.
+  if (signal.aborted) throw new ToolError("cancelled", "Work mode switch cancelled")
   return answer?.selected[0] === CONFIRM_PLAN ? null : (answer?.other ?? "Operator chose to stay in build")
 }
 
@@ -53,15 +57,16 @@ export const registerWorkModeTool = (registry: ToolRegistry, context: AgentRunti
     outputBudget: 16_000,
     cancellable: true,
     idempotency: "unsafe",
-    execute: async ({ mode, reason }, { plan }) => {
+    execute: async ({ mode, reason }, { plan, signal }) => {
       const host = context.workModeHost
       if (host === undefined) throw new ToolError("forbidden", "Work mode switching is unavailable for this chat")
       if (mode === "plan" && plan === true) return { status: "unchanged", mode, reason: "Already in plan mode" }
       assertCanSwitch(context, host, mode)
       if (mode === "plan" && !host.autoSwitch) {
-        const declined = await confirmPlan(context, reason)
+        const declined = await confirmPlan(context, reason, signal)
         if (declined !== null) return { status: "declined", mode: "build", reason: declined }
       }
+      host.takeSwitch()
       if (mode === "plan") await context.planning?.enterPlanning?.()
       await Effect.runPromise(context.publishEvent({ _tag: "WorkModeChanged", workMode: mode }))
       return { status: "switched", mode, reason }

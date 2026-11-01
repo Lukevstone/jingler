@@ -1067,6 +1067,16 @@ const switchRepoResponse = (context: PiContext): ReturnType<typeof fauxAssistant
   return fauxAssistantMessage("Edited the second repository.")
 }
 
+// `[[add-origin=url]]`: turn the Auto scratch folder into a real repo by adding an origin.
+const addOriginResponse = (context: PiContext): ReturnType<typeof fauxAssistantMessage> | null => {
+  const url = /\[\[add-origin=([^\]]+)\]\]/u.exec(latestOperatorText(context))?.[1]
+  if (url === undefined) return null
+  if (recentToolResultCount(context, COMMAND_TOOL) === 0) {
+    return callTool(COMMAND_TOOL, { command: `git remote add origin ${url}`, intent: "Adding the origin remote" }, "add-origin-1")
+  }
+  return fauxAssistantMessage("Added the origin remote.")
+}
+
 // `[[checkout-branch=name]]`: switch to the repo named by `[[switch-repo=…]]`, then move that checkout onto a new branch.
 const checkoutBranchResponse = (context: PiContext): ReturnType<typeof fauxAssistantMessage> | null => {
   const branch = /\[\[checkout-branch=([^\]]+)\]\]/u.exec(latestOperatorText(context))?.[1]
@@ -1147,6 +1157,7 @@ const markerResponders = [
   checkoutBranchResponse,
   ghPrCreateResponse,
   switchRepoResponse,
+  addOriginResponse,
   fileBrowserResponse,
   supervisorSubagentResponse,
   heldSubagentAskResponse,

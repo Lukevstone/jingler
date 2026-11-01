@@ -352,6 +352,25 @@ describe("shared harness planning", () => {
     expect(f.events).toContainEqual({ _tag: "WorkModeChanged", workMode: "build" })
   })
 
+  it("re-entering plan after approval invalidates the previous approval", async () => {
+    const f = await setup(); const spec = specFor(f.root)
+    let afterApproval: boolean | undefined; let afterReentry: boolean | undefined
+    const runtime = f.wrap(async function* (registry, spec, context) {
+      await call(registry, spec, context, "plannotator_submit_plan", { filePath: "plan.md" })
+      afterApproval = context.planning?.planApproved?.()
+      await context.planning?.enterPlanning?.()
+      afterReentry = context.planning?.planApproved?.()
+      yield done
+    })
+    const running = f.run(runtime, spec)
+    const reviewId = await f.review()
+    await Effect.runPromise(runtime.decidePlanReview(ownerFor(spec), "s", "a", { reviewId, approved: true }))
+    await running
+    expect(afterApproval).toBe(true)
+    expect(afterReentry).toBe(false)
+    expect(f.projections().at(-1)?.phase).toBe("planning")
+  })
+
   it("enters planning when an existing chat switches modes without resetting approved plan turns", async () => {
     const f = await setup(); let turn = 0
     const runtime = f.wrap(async function* (registry, spec, context) {

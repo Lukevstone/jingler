@@ -115,7 +115,8 @@ class PlanningSession {
 
   async enterPlanning() {
     await this.serialize(async () => {
-      if (this.state.phase !== "idle") return
+      // From executing too: a new planning cycle must not inherit the last plan's approval.
+      if (this.state.phase === "planning") return
       this.state = { ...this.state, phase: "planning" }
       await this.save()
     })

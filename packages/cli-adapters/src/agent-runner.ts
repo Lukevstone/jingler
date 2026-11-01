@@ -434,7 +434,7 @@ export class AgentRunner extends Effect.Service<AgentRunner>()("@jingler/AgentRu
     const workModeHostFor = (chatId: string, chat: { readonly autoSwitch?: boolean; readonly mode?: PermissionMode }) => {
       let switches = 0
       const approval = () => Effect.runSync(Ref.get(modes)).get(chatId) ?? chat.mode ?? defaultModeFor()
-      return { workModeHost: { autoSwitch: chat.autoSwitch === true, approvalIsAuto: () => approval() === "auto", reserveSwitch: () => switches < MAX_WORK_MODE_SWITCHES && ++switches > 0 } }
+      return { workModeHost: { autoSwitch: chat.autoSwitch === true, approvalIsAuto: () => approval() === "auto", canSwitch: () => switches < MAX_WORK_MODE_SWITCHES, takeSwitch: () => { switches++ } } }
     }
 
     const followWorkMode = (sessionId: string, chatId: string, event: StreamEvent) =>

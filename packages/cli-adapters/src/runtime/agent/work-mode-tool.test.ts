@@ -21,7 +21,8 @@ const setup = (opts: { approved?: boolean; auto?: boolean; autoSwitch?: boolean;
     workModeHost: {
       autoSwitch: opts.autoSwitch ?? true,
       approvalIsAuto: () => opts.auto === true,
-      reserveSwitch: () => switches < MAX_WORK_MODE_SWITCHES && ++switches > 0
+      canSwitch: () => switches < MAX_WORK_MODE_SWITCHES,
+      takeSwitch: () => { switches++ }
     }
   } as unknown as AgentRuntimeContext
   const registry = new ToolRegistry()
@@ -81,6 +82,12 @@ describe("jingler_set_work_mode", () => {
     expect(f.events).toEqual([])
   })
 
+  it("declined switches do not spend the allowance", async () => {
+    const f = setup({ autoSwitch: false, answer: "Stay in build", auto: true })
+    await f.run("plan"); await f.run("plan")
+    expect((await f.run("build")).status).toBe("success")
+  })
+
   it("with Auto, entering plan does not ask", async () => {
     const f = setup()
     await f.run("plan")
@@ -92,7 +99,7 @@ describe("jingler_set_work_mode", () => {
     const ctx = { publishEvent: () => Effect.void, registerBackgroundStop: () => Effect.void, canUseTool: () => Effect.succeed("allow"), askQuestion: () => Effect.succeed([]) } as unknown as AgentRuntimeContext
     const ids = createJinglerControlTools(ctx).capabilitiesFor("conversation", "auto").map((c) => c.id)
     expect(ids).not.toContain("jingler_set_work_mode")
-    const on = createJinglerControlTools({ ...ctx, workModeHost: { autoSwitch: false, approvalIsAuto: () => false, reserveSwitch: () => true } })
+    const on = createJinglerControlTools({ ...ctx, workModeHost: { autoSwitch: false, approvalIsAuto: () => false, canSwitch: () => true, takeSwitch: () => {} } })
     expect(on.capabilitiesFor("conversation", "plan").map((c) => c.id)).toContain("jingler_set_work_mode")
   })
 })

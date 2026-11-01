@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { activeCheckoutOf, type CreateSessionInput, ProviderConnectionId, ProviderId, ProviderModelId } from "@jingler/core"
+import { activeCheckoutOf, type CreateSessionInput, reduceCheckouts, ProviderConnectionId, ProviderId, ProviderModelId } from "@jingler/core"
 import { Effect, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { adoptScratchRepo } from "./adopt-scratch-repo.js"
@@ -30,6 +30,22 @@ describe("adoptScratchRepo", () => {
     expect(await run(adoptScratchRepo(session.id, register))).toBe(false)
     expect(registered).toEqual([])
     expect(activeCheckoutOf(await run(SessionStore.get(session.id))).repo).toBe("")
+  })
+
+  it("skips adoption when a checkout was attached while it was registering", async () => {
+    registered.length = 0
+    const session = await autoSession()
+    const dir = activeCheckoutOf(session).worktreePath!
+    execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/acme/Clubsy.git"])
+    const attached = { id: "co_web", repo: "web", repoPath: "/r/web", worktreePath: "/w/web", branch: "main", prNumber: null }
+    const racing = (path: string, name: string) => SessionStore.get(session.id).pipe(
+      Effect.flatMap((current) => SessionStore.setCheckouts(session.id, reduceCheckouts(current, { type: "attach", checkout: attached }))),
+      Effect.zipRight(register(path, name))
+    )
+    expect(await run(adoptScratchRepo(session.id, racing))).toBe(false)
+    const stored = await run(SessionStore.get(session.id))
+    expect(stored.checkouts?.map((c) => c.id)).toEqual(["co_web"])
+    expect(activeCheckoutOf(stored).repo).toBe("web")
   })
 
   it("fills the placeholder checkout once the agent adds an origin", async () => {
