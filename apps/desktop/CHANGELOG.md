@@ -1,5 +1,15 @@
 # @jingler/desktop
 
+## 0.17.0
+
+### Minor Changes
+
+- 5e54fef: Agents now ask before switching into Plan mode when Auto switching is off, and plans can only be submitted from Plan mode. Auto sessions also pick up a repo the agent creates or clones in its scratch folder, so the sidebar shows the real repo name instead of "No repo".
+
+### Patch Changes
+
+- @jingler/plannotator-ext@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes
