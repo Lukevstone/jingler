@@ -113,6 +113,15 @@ class PlanningSession {
 
   planApproved() { return this.state.phase === "executing" }
 
+  async enterPlanning() {
+    await this.serialize(async () => {
+      // From executing too: a new planning cycle must not inherit the last plan's approval.
+      if (this.state.phase === "planning") return
+      this.state = { ...this.state, phase: "planning" }
+      await this.save()
+    })
+  }
+
   attachRegistry(registry: ToolRegistry) { this.registry = registry }
 
   register(registry: ToolRegistry, context: AgentRuntimeContext) {
@@ -141,6 +150,9 @@ class PlanningSession {
 
   private async adopt(filePath: string, submit: boolean, signal: AbortSignal) {
     signal.throwIfAborted()
+    if (submit && this.state.phase === "idle" && this.binding?.spec.mode !== "plan") {
+      throw new ToolError("forbidden", "Plans are submitted from plan mode: call jingler_set_work_mode with mode plan first")
+    }
     if (this.pending || this.state.reviewPending) throw new ToolError("forbidden", "A plan review is pending; resolve or resume it before changing the plan")
     const content = await readPlan(this.state.cwd, filePath)
     const errors = submit ? validatePlanMarkdown(content) : []

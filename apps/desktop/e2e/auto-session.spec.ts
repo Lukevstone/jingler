@@ -29,12 +29,11 @@ const allowGates = async (window: Page, until: () => Promise<boolean>): Promise<
     .toBe(true)
 }
 
-test("Auto: a session created with no repo shows \"No repo\" until the agent attaches one", async ({ launchApp }) => {
-  const { window, home, repoPath } = await launchApp({ configured: true, withRepo: true })
-  await expect(appShell(window)).toBeVisible()
-
-  // Seed a project so the Project picker has one — Auto must be chosen
-  // explicitly, never a fallback, so this just proves it isn't.
+/**
+ * Open New session and pick Auto. The composer stays disabled until some
+ * project exists, so seed one first — Auto must be chosen explicitly, never a fallback.
+ */
+const startAutoSession = async (window: Page, repoPath: string): Promise<void> => {
   await window.getByTestId("new-session").click()
   await expect(window.getByRole("heading", { name: "New session" })).toBeVisible()
   if ((await window.getByTestId("new-session-view").getByText("Add a project before starting a session.").count()) > 0) {
@@ -48,9 +47,15 @@ test("Auto: a session created with no repo shows \"No repo\" until the agent att
     await window.getByRole("button", { name: "Choose current folder" }).click()
     await window.getByRole("dialog").getByRole("button", { name: "Add project" }).click()
   }
-
   await window.getByRole("button", { name: "Project", exact: true }).click()
   await window.getByRole("option", { name: "Auto" }).click()
+}
+
+test("Auto: a session created with no repo shows \"No repo\" until the agent attaches one", async ({ launchApp }) => {
+  const { window, home, repoPath } = await launchApp({ configured: true, withRepo: true })
+  await expect(appShell(window)).toBeVisible()
+
+  await startAutoSession(window, repoPath)
   const composer = window.getByPlaceholder(/Message the agent/)
   await composer.fill("[[switch-repo=" + repoPath + "]] work in the repo")
   await composer.press("Enter")
@@ -76,4 +81,28 @@ test("Auto: a session created with no repo shows \"No repo\" until the agent att
   await window.getByRole("button", { name: /^Changes\b/ }).first().click()
   await expect(window.getByText("No repo")).toHaveCount(0)
   await expect(window.locator('[data-item-path="src/other-repo.ts"]')).toBeVisible({ timeout: 20_000 })
+})
+
+test("Auto: a scratch folder the agent turns into a repo is adopted and survives a restart", async ({ launchApp }) => {
+  const first = await launchApp({ configured: true, withRepo: true })
+  const { window, home } = first
+  await expect(appShell(window)).toBeVisible()
+  await startAutoSession(window, first.repoPath)
+  const composer = window.getByPlaceholder(/Message the agent/)
+  await composer.fill("[[add-origin=https://github.com/acme/Clubsy.git]] start the repo")
+  await composer.press("Enter")
+  const row = window.locator("[data-testid^='session-row-']").first()
+  await expect(row).toContainText("No repo", { timeout: 20_000 })
+
+  await allowGates(window, async () => (await window.getByText("Added the origin remote.").count()) > 0)
+  await expect(row).toContainText("Clubsy", { timeout: 20_000 })
+  const session = sessionsAt(home)[0]!
+  expect(session.repo).toBe("Clubsy")
+  const projects = JSON.parse(readFileSync(join(home, "jingler", "projects.json"), "utf8")) as ReadonlyArray<{ name: string; path: string }>
+  expect(projects.some((p) => p.name === "Clubsy" && p.path === session.repoPath)).toBe(true)
+  await first.app.close()
+
+  const reopened = await launchApp({ configured: true, withRepo: true, home, reposDir: first.reposDir, userDataDir: first.userDataDir, authServer: first.authServer, githubServer: first.githubServer, githubRelay: first.githubRelay })
+  await expect(appShell(reopened.window)).toBeVisible()
+  await expect(reopened.window.locator("[data-testid^='session-row-']").first()).toContainText("Clubsy", { timeout: 20_000 })
 })

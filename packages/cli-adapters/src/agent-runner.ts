@@ -80,6 +80,7 @@ import { renderPrimer, tailAfter } from "./context-digest.js"
 import { healedWorktreePath } from "./runtime/persistence/worktree-path.js"
 import { branchAt, defaultBranchOf, ensureWorktreeLinked, GitService } from "./git.js"
 import { ProjectService } from "./projects.js"
+import { adoptScratchRepo } from "./adopt-scratch-repo.js"
 import { makeCheckoutHost, type CheckoutHostDeps } from "./checkout-host.js"
 import { BrowserControlMcpService,
   type BrowserControlMcpAttachment
@@ -429,12 +430,11 @@ export class AgentRunner extends Effect.Service<AgentRunner>()("@jingler/AgentRu
         return (yield* Ref.get(modes)).get(chatId) ?? (mode === "plan" ? defaultModeFor() : mode)
       })
 
-    // Present only with Auto switching on; allows MAX_WORK_MODE_SWITCHES agent-initiated switches per turn.
+    // Allows MAX_WORK_MODE_SWITCHES agent-initiated switches per turn; without Auto, entering plan asks the operator.
     const workModeHostFor = (chatId: string, chat: { readonly autoSwitch?: boolean; readonly mode?: PermissionMode }) => {
-      if (chat.autoSwitch !== true) return {}
       let switches = 0
       const approval = () => Effect.runSync(Ref.get(modes)).get(chatId) ?? chat.mode ?? defaultModeFor()
-      return { workModeHost: { approvalIsAuto: () => approval() === "auto", reserveSwitch: () => switches < MAX_WORK_MODE_SWITCHES && ++switches > 0 } }
+      return { workModeHost: { autoSwitch: chat.autoSwitch === true, approvalIsAuto: () => approval() === "auto", canSwitch: () => switches < MAX_WORK_MODE_SWITCHES, takeSwitch: () => { switches++ } } }
     }
 
     const followWorkMode = (sessionId: string, chatId: string, event: StreamEvent) =>
@@ -717,6 +717,7 @@ export class AgentRunner extends Effect.Service<AgentRunner>()("@jingler/AgentRu
             | SecretStore
           >()
 
+          const projectService = yield* Effect.serviceOption(ProjectService)
           const now = yield* Effect.sync(() => new Date().toISOString())
           // The id counter is in-memory and resets when the app restarts, but the
           // transcript persists — so seed it past any id already recorded for this
@@ -903,6 +904,7 @@ export class AgentRunner extends Effect.Service<AgentRunner>()("@jingler/AgentRu
                   yield* rememberTurnFile(touchedFiles, chatId, worktreePath, event)
                   // A PR the agent opened from some other worktree still belongs to this session.
                   yield* linkAgentCreatedPr(toolCommands, sessionId, event, out.offer({ _tag: "SessionIssueLinksChanged" }).pipe(Effect.asVoid))
+                  yield* adoptTurnScratchRepo(projectService, sessionId, event, out.offer({ _tag: "SessionIssueLinksChanged" }).pipe(Effect.asVoid))
                   // Canonical plan writes must land BEFORE the event is offered.
                   // `Done` makes the renderer leave its invoked stream immediately;
                   // publishing it first lets that cancellation interrupt everything
@@ -1937,6 +1939,20 @@ const linkAgentCreatedPr = (
     yield* SessionStore.linkAgentPr(sessionId, number)
     yield* announce
   }).pipe(Effect.ignore)
+
+/** An Auto session whose scratch folder became a real repo shows that repo once the turn ends. */
+const adoptTurnScratchRepo = (
+  projectService: Option.Option<ProjectService>,
+  sessionId: string,
+  event: StreamEvent,
+  announce: Effect.Effect<void>
+) =>
+  event._tag !== "Done" || Option.isNone(projectService)
+    ? Effect.void
+    : adoptScratchRepo(sessionId, (path, name) => projectService.value.register({ path, name })).pipe(
+        Effect.flatMap((adopted) => (adopted ? announce : Effect.void)),
+        Effect.ignore
+      )
 
 const rememberTurnFile = (
   touchedFiles: Ref.Ref<Map<string, ReadonlyArray<string>>>,

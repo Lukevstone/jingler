@@ -105,7 +105,7 @@ it.each(["claude", "codex", "opencode"] as const)("%s transports plan tools and 
       runId: "planning", sessionId: "session", chatId: "chat", runtimeId, endpointId: nativeCliEndpointId("desktop", runtimeId),
       providerId: ProviderId.make(runtimeId === "opencode" ? "alpha" : runtimeId === "codex" ? "openai" : "anthropic"),
       modelId: ProviderModelId.make(runtimeId === "opencode" ? "fixture-model" : runtimeId === "codex" ? "first" : "anthropic/haiku"),
-      cwd: root, role: "conversation", mode: "auto", prompt: "planning-probe", priorMessages: [], continuation: null, seed: null,
+      cwd: root, role: "conversation", mode: "plan", prompt: "planning-probe", priorMessages: [], continuation: null, seed: null,
       targetCapabilities: { versions: CURRENT_RUNTIME_CONTRACTS, targetId: "desktop", toolIds: [], resourceIds: [] }
     }
     const published: StreamEvent[] = []

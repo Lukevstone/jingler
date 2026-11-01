@@ -2034,7 +2034,16 @@ export class SessionStore extends Effect.Service<SessionStore>()(
 
       /** Persist a checkout reducer result: the checkout list plus the scalar mirrors of the active one. */
       const setCheckouts = (id: string, next: Parameters<typeof activeCheckoutOf>[0]) =>
+        update(id, (session) => withCheckouts(session, next))
+
+      /** Derive the next checkout state from the CURRENT stored session, atomically; `null` leaves it unchanged. */
+      const modifyCheckouts = (id: string, f: (session: Session) => Parameters<typeof activeCheckoutOf>[0] | null) =>
         update(id, (session) => {
+          const next = f(session)
+          return next === null ? session : withCheckouts(session, next)
+        })
+
+      const withCheckouts = (session: Session, next: Parameters<typeof activeCheckoutOf>[0]) => {
           const active = activeCheckoutOf(next)
           return {
             ...session,
@@ -2050,7 +2059,7 @@ export class SessionStore extends Effect.Service<SessionStore>()(
             checkouts: next.checkouts,
             activeCheckoutId: next.activeCheckoutId
           }
-        })
+      }
 
       /** Attach a durable project identity without changing checkout/transcript state. */
       const setProject = (id: string, projectId: string) =>
@@ -2319,6 +2328,7 @@ export class SessionStore extends Effect.Service<SessionStore>()(
         reconcileInterruptedWorkspaceLifecycles,
         setWorktreePath,
         setCheckouts,
+        modifyCheckouts,
         setProject,
         setImportedFrom,
         setIssue,
