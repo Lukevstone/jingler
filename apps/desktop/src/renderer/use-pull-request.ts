@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { PrMergeMethod, PullRequest, ReviewSubmitKind, Session } from "@jingler/core"
 import { activeCheckoutOf } from "@jingler/core"
 import { rpc } from "./rpc-client.js"
+import { githubPollInterval, retryUnlessRateLimited } from "./github-poll.js"
 import { getConversationActor } from "./conversation-registry.js"
 import { markRouted, useRoutedEntries } from "./routed-store.js"
 
@@ -91,8 +92,9 @@ export function usePullRequest(
     queryKey: prKey(session.id, prNumber),
     // Checks and review state change outside Jingler. Keep the visible PR current
     // without polling hidden/background windows.
-    refetchInterval: PR_REFRESH_MS,
+    refetchInterval: githubPollInterval(PR_REFRESH_MS),
     refetchIntervalInBackground: false,
+    retry: retryUnlessRateLimited,
     queryFn: async () => {
       // Re-detect even when linked: a session can outlive one PR and open another.
       if (autoDetect) {

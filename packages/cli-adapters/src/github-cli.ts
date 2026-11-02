@@ -16,6 +16,7 @@ import { GitHubApiError } from "@jingler/core"
 import { Command, CommandExecutor } from "@effect/platform"
 import type { PlatformError } from "@effect/platform/Error"
 import { Effect, Stream } from "effect"
+import { makeRateGate } from "./github-rate-gate.js"
 import {
   jsonRecord,
   mapApiFiles,
@@ -102,6 +103,28 @@ const COMMITS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$endCurso
 
 const NO_PULL_REQUEST = /no pull requests found|could not find(?: a)? pull request/i
 const NOT_FOUND = /not found|HTTP 404/i
+const GH_RATE_LIMIT = /rate limit|retry-after|secondary rate/i
+// gh hides response headers, so a limit hit cools its bucket down: 60s, doubling per repeat.
+// Search is skipped: the team inbox already tracks its own per-account search cooldown.
+const ghGate = makeRateGate()
+const ghBucket = (args: ReadonlyArray<string>): string | null =>
+  args[0] !== "api" ? "core" : args.some((arg) => arg.startsWith("search/")) ? null : args.includes("graphql") ? "graphql" : "core"
+/** Map a failed gh run to an error; a rate-limit message also cools its bucket down. */
+const ghFailure = (message: string, bucket: string | null): GitHubApiError => {
+  if (GH_RATE_LIMIT.test(message)) {
+    if (bucket !== null) ghGate.trip(bucket)
+    return new GitHubApiError({ reason: "rate-limited", message })
+  }
+  return new GitHubApiError({
+    reason: NO_PULL_REQUEST.test(message) || NOT_FOUND.test(message) ? "not-found" : "unavailable",
+    message
+  })
+}
+/** Test isolation only: the gate is module state shared by every gh call. */
+export const resetGhRateGate = (): void => {
+  ghGate.clear("core")
+  ghGate.clear("graphql")
+}
 const PR_LIST_FIELDS = "number,title,headRefName,baseRefName,author,state,isDraft,additions,deletions,updatedAt"
 const ISSUE_FIELDS = "number,title,body,state,url,author,assignees,labels,updatedAt,createdAt,comments"
 const ISSUE_LIST_FIELDS = "number,title,body,state,url,author,assignees,labels,updatedAt"
@@ -127,6 +150,8 @@ const execute = (
 ): Effect.Effect<string, GitHubApiError, CommandExecutor.CommandExecutor> =>
   Effect.scoped(
     Effect.gen(function* () {
+      const bucket = ghBucket(args)
+      if (bucket !== null) yield* Effect.try({ try: () => ghGate.check(bucket), catch: (error) => error as GitHubApiError })
       const base = Command.make("gh", ...args)
       const located = cwd === null ? base : base.pipe(Command.workingDirectory(cwd))
       const fed = stdin === undefined ? located : located.pipe(Command.feed(stdin))
@@ -139,15 +164,8 @@ const execute = (
         [decode(child.stdout), decode(child.stderr), child.exitCode],
         { concurrency: 3 }
       )
-      if (exitCode !== 0) {
-        const message = stderr.trim() || stdout.trim() || `gh exited ${exitCode}`
-        return yield* Effect.fail(new GitHubApiError({
-          reason: NO_PULL_REQUEST.test(message) || NOT_FOUND.test(message)
-            ? "not-found"
-            : "unavailable",
-          message
-        }))
-      }
+      if (exitCode !== 0) return yield* Effect.fail(ghFailure(stderr.trim() || stdout.trim() || `gh exited ${exitCode}`, bucket))
+      if (bucket !== null) ghGate.clear(bucket)
       return stdout.trim()
     })
   ).pipe(

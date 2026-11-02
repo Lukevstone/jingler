@@ -1003,3 +1003,43 @@ describe("GitHubApi writes and fork metadata", () => {
     expect(git).not.toHaveBeenCalled()
   })
 })
+
+describe("GitHubApi rate-limit compliance", () => {
+  const closedPull = { number: 7, state: "closed", merged_at: null, head: { sha: "abc123" } }
+
+  it("revalidates GETs with the ETag and serves the cached body on 304", async () => {
+    let pullCalls = 0
+    const { client, seen } = makeClient((request) => {
+      if (pathIs(request, "/repos/acme/widget")) return json(repository)
+      if (pathIs(request, "/repos/acme/widget/pulls/7")) {
+        pullCalls++
+        if (request.headers.get("if-none-match") === '"v1"') return new Response(null, { status: 304, headers: { etag: '"v1"' } })
+        return json(closedPull, 200, { etag: '"v1"' })
+      }
+      throw new Error(`unexpected ${request.method} ${request.url}`)
+    })
+
+    await expect(client.prState("/repo", 7)).resolves.toEqual({ state: "closed", checks: null })
+    await expect(client.prState("/repo", 7)).resolves.toEqual({ state: "closed", checks: null })
+    expect(pullCalls).toBe(2)
+    const pulls = seen.filter((request) => pathIs(request, "/repos/acme/widget/pulls/7"))
+    expect(pulls[0]?.headers.get("if-none-match")).toBeNull()
+    expect(pulls[1]?.headers.get("if-none-match")).toBe('"v1"')
+  })
+
+  it("stops calling GitHub after a rate-limit response until retry-after passes", async () => {
+    const { client, seen } = makeClient((request) => {
+      if (pathIs(request, "/repos/acme/widget")) return json(repository)
+      if (pathIs(request, "/repos/acme/widget/pulls/7")) {
+        return json({ message: "API rate limit exceeded" }, 429, { "retry-after": "120" })
+      }
+      throw new Error(`unexpected ${request.method} ${request.url}`)
+    })
+
+    await expect(client.prState("/repo", 7)).rejects.toMatchObject({ reason: "rate-limited" })
+    const sent = seen.length
+    await expect(client.prState("/repo", 7)).rejects.toMatchObject({ reason: "rate-limited" })
+    // The second attempt is refused locally: nothing new reaches GitHub.
+    expect(seen.length).toBe(sent)
+  })
+})
