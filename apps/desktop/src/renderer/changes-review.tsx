@@ -4,12 +4,12 @@
  * places it now renders — the Explorer's changed-files filter, the Files view's
  * review diff, and the review tray beside the panes.
  */
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSelector } from "@xstate/react"
 import type { Session, SubagentFleetNode } from "@jingler/core"
 import { activeCheckoutOf, checkoutById, checkoutsOf, hasNoRepo, workspaceModeOf, sessionPrsOf } from "@jingler/core"
 import type { AgentTreeChanges } from "@jingler/ui"
-import { ChangedFilesExplorer, EmptyState, SubagentScopeBar, ReviewSidebar, checkoutLabel, reviewTurnsOf } from "@jingler/ui"
+import { ChangedFilesExplorer, CollapsibleSection, EmptyState, SubagentScopeBar, ReviewSidebar, checkoutLabel, cn, reviewTurnsOf } from "@jingler/ui"
 import { getConversationActor } from "./conversation-registry.js"
 import {
   setReviewFilter,
@@ -213,17 +213,46 @@ export function ChangesExplorerPanel({
       />
     )
   }
+  return <MultiRepoChanges session={session} connected={connected} activePath={activePath} onOpenPath={onOpenPath} />
+}
+
+/** One collapsible section per checkout: the active repo opens (and re-opens when the agent switches); the rest start collapsed. */
+function MultiRepoChanges({
+  session,
+  connected,
+  activePath,
+  onOpenPath
+}: {
+  readonly session: Session
+  readonly connected: boolean
+  readonly activePath: string | null
+  readonly onOpenPath: (path: string, checkoutId?: string) => void
+}) {
+  const activeId = activeCheckoutOf(session).id
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set([activeId]))
+  useEffect(() => {
+    setOpen((current) => (current.has(activeId) ? current : new Set([...current, activeId])))
+  }, [activeId])
+  const toggle = useCallback((id: string, next: boolean) => {
+    setOpen((current) => {
+      const updated = new Set(current)
+      if (next) updated.add(id)
+      else updated.delete(id)
+      return updated
+    })
+  }, [])
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
-      {checkouts.map((checkout) => (
-        <section
+      {checkoutsOf(session).map((checkout) => (
+        <CollapsibleSection
           key={checkout.id}
           data-testid={`changes-checkout-${checkout.id}`}
-          className="flex min-h-[10rem] flex-1 flex-col border-b border-line"
+          title={checkoutLabel(checkout)}
+          trailing={<CheckoutFileCount session={session} checkoutId={checkout.id} />}
+          open={open.has(checkout.id)}
+          onOpenChange={(next) => toggle(checkout.id, next)}
+          className={cn("border-b border-line", open.has(checkout.id) ? "min-h-[10rem] flex-1" : "flex-none")}
         >
-          <h3 className="px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-wide text-dim">
-            {checkoutLabel(checkout)}
-          </h3>
           <CheckoutChangesList
             session={session}
             connected={connected}
@@ -231,10 +260,16 @@ export function ChangesExplorerPanel({
             activePath={activePath}
             onOpenPath={(path) => onOpenPath(path, checkout.id)}
           />
-        </section>
+        </CollapsibleSection>
       ))}
     </div>
   )
+}
+
+/** Changed-file count in a section header, so a collapsed repo still says whether it has work. Shares the list's cached query. */
+function CheckoutFileCount({ session, checkoutId }: { readonly session: Session; readonly checkoutId: string }) {
+  const count = useReview(session, checkoutId).files.length
+  return count > 0 ? <span data-testid={`changes-checkout-count-${checkoutId}`} className="flex-none tabular-nums">{count}</span> : null
 }
 
 export function ReviewTrayDock({

@@ -110,6 +110,9 @@ test("agent switches to a second registered repo mid-turn; Changes groups both; 
   // Changes: both repos grouped by checkout.
   await window.getByRole("button", { name: /^Changes\b/ }).first().click()
   await expect(window.getByTestId(`changes-checkout-${first!.id}`)).toBeVisible({ timeout: 20_000 })
+  // Repo sections are collapsible; open the second one unless it is already the active (open) repo.
+  const secondSection = window.getByTestId(`changes-checkout-${second!.id}`)
+  if ((await secondSection.getAttribute("open")) === null) await secondSection.locator("summary").click()
   await expect(window.getByTestId(`changes-checkout-${second!.id}`).locator('[data-item-path="src/other-repo.ts"]')).toBeVisible({ timeout: 20_000 })
   await expect(window.getByTestId(`changes-checkout-${first!.id}`).locator('[data-item-path="src/other-repo.ts"]')).toHaveCount(0)
 
