@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { build } from "esbuild"
 import { describe, expect, it } from "vitest"
+import { processWorkerBuildOptions } from "../../apps/device-agent/scripts/process-worker-build.mjs"
 
 const execute = promisify(execFile)
 const REMOVED_PROMPT_PATCH = /PROMPT_REDACTED|task: progress\.task|task: result\.task/u
@@ -239,6 +240,9 @@ if (process.argv.includes("auth")) {
       target: "node24",
       outfile: providerBundle
     })
+    // The shipped bundle, not the source worker: pi resolves extension imports differently once bundled.
+    const workerBundle = join(root, "jingler-subagent-process-worker.mjs")
+    await build(processWorkerBuildOptions(resolve("."), workerBundle))
     const factoryUrl = pathToFileURL(
       resolve("node_modules/pi-subagents/src/runs/shared/process-child-session.js")
     ).href
@@ -271,6 +275,7 @@ if (process.argv.includes("auth")) {
           JINGLER_SUBAGENT_CREDENTIAL_ROOT: root,
           JINGLER_SUBAGENT_NODE: process.execPath,
           JINGLER_CLAUDE_BINARY: fakeClaude,
+          JINGLER_SUBAGENT_PROCESS_WORKER: workerBundle,
           ANTHROPIC_API_KEY: "must-not-reach-child",
           ANTHROPIC_AUTH_TOKEN: "must-not-reach-child",
           ANTHROPIC_BASE_URL: "https://api.example.test",

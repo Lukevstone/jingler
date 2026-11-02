@@ -1,4 +1,5 @@
 import config from "@jingler/plannotator-ext/plannotator.json" with { type: "json" }
+import { SUBAGENT_MODEL_POLICY_PATH } from "../subagents/subagent-model-policy.js"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -69,8 +70,10 @@ describe("locked pi resources", () => {
 
     await Effect.runPromise(assertLockedPiResources(loader, "Jingler owns this prompt"))
     expect(loader.getSystemPrompt()).toBe("Jingler owns this prompt")
-    expect(loader.getExtensions().extensions).toHaveLength(1)
-    expect(loader.getExtensions().extensions[0]?.path).toContain("pi-subagents")
+    const paths = loader.getExtensions().extensions.map((extension) => extension.path)
+    expect(paths).toHaveLength(2)
+    expect(paths[0]).toContain("pi-subagents")
+    expect(paths[1]).toBe(SUBAGENT_MODEL_POLICY_PATH)
     expect(loader.getSkills().skills).toEqual([])
   })
 })

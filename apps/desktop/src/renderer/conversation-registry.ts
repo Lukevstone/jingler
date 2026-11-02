@@ -478,6 +478,17 @@ const publishChatActivity = (
   activity: SessionActivity | null
 ): void => {
   const previous = chatActivities[sessionId] ?? {}
+  const current = previous[chatId]
+  // `activityFor` builds a fresh object every flush; publishing an equal one
+  // re-renders the whole app (App subscribes) ~10×/s per streaming chat.
+  if (
+    activity === null
+      ? current === undefined
+      : current?.kind === activity.kind &&
+        current.verb === activity.verb &&
+        current.target === activity.target &&
+        current.startedAt === activity.startedAt
+  ) return
   const next = { ...previous }
   if (activity === null) delete next[chatId]
   else next[chatId] = activity

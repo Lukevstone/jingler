@@ -3,6 +3,7 @@ import { chmod, cp, mkdir, open, readdir, readFile, rm, stat } from "node:fs/pro
 import { basename, dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 import { build } from "esbuild"
+import { processWorkerBuildOptions } from "./process-worker-build.mjs"
 
 const run = promisify(execFile)
 const root = resolve(import.meta.dirname, "../../..")
@@ -45,19 +46,10 @@ await build({
   target: "node24",
   outfile: resolve(payload, "runtime-assets/jingler-claude-cli-provider.mjs")
 })
-await build({
-  entryPoints: [resolve(root, "node_modules/pi-subagents/src/runs/shared/process-child-session-worker.js")],
-  bundle: true,
-  platform: "node",
-  mainFields: ["module", "main"],
-  format: "esm",
-  target: "node24",
-  outfile: resolve(payload, "runtime-assets/jingler-subagent-process-worker.mjs"),
-  inject: [resolve(import.meta.dirname, "../src/bundled-oauth.ts")],
-  banner: {
-    js: "import { createRequire as __jinglerCreateRequire } from \"node:module\"; const require = __jinglerCreateRequire(import.meta.url);"
-  }
-})
+await build(processWorkerBuildOptions(
+  root,
+  resolve(payload, "runtime-assets/jingler-subagent-process-worker.mjs")
+))
 await cp(
   resolve(root, "packages/cli-adapters/runtime-assets/jingler-child-tools.mjs"),
   resolve(payload, "runtime-assets/jingler-child-tools.mjs")

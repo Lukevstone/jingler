@@ -53,11 +53,30 @@ const refreshSession = (sessionId: string): void => {
   publish()
 }
 
+const sameNodes = (
+  a: ReadonlyArray<SubagentFleetNode> | undefined,
+  b: ReadonlyArray<SubagentFleetNode> | undefined
+): boolean =>
+  a === b || (
+    a !== undefined && b !== undefined && a.length === b.length &&
+    a.every((node, index) => node === b[index] || JSON.stringify(node) === JSON.stringify(b[index]))
+  )
+
+const sameSnapshot = (a: SubagentTabSnapshot | undefined, b: SubagentTabSnapshot): boolean =>
+  a !== undefined &&
+  a.selectedId === b.selectedId &&
+  sameNodes(a.active, b.active) &&
+  sameNodes(a.completed, b.completed) &&
+  sameNodes(a.orchestrators, b.orchestrators)
+
 const setSnapshot = (
   target: Map<string, Map<string, SubagentTabSnapshot>>,
   sessionId: string,
   snapshot: SubagentTabSnapshot
 ): void => {
+  // The actor projection rebuilds this every publish flush; an equal one would
+  // re-render App (useAllSessionSubagentTabs) ~10×/s per streaming chat.
+  if (sameSnapshot(target.get(sessionId)?.get(snapshot.chatId), snapshot)) return
   const chats = new Map(target.get(sessionId) ?? [])
   chats.set(snapshot.chatId, snapshot)
   target.set(sessionId, chats)

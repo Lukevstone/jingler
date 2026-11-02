@@ -92,6 +92,31 @@ describe("subagent tab store", () => {
     expect(result.current[0]?.active).toEqual([worker])
   })
 
+  it("does not re-notify subscribers when an equal snapshot is republished", () => {
+    let renders = 0
+    renderHook(() => {
+      renders += 1
+      return useSessionSubagentTabs("session-1")
+    })
+    const publish = () => publishActorSubagentTabs("session-1", {
+      chatId: "chat-1",
+      active: [node()],
+      completed: [],
+      selectedId: "main"
+    })
+    act(publish)
+    const settled = renders
+    act(publish)
+    expect(renders).toBe(settled)
+    act(() => publishActorSubagentTabs("session-1", {
+      chatId: "chat-1",
+      active: [node({ currentTool: "read" })],
+      completed: [],
+      selectedId: "main"
+    }))
+    expect(renders).toBe(settled + 1)
+  })
+
   it("keeps controller state until every mounted chat surface releases it", () => {
     const { result } = renderHook(() => useSessionSubagentTabs("session-1"))
     act(() => {
