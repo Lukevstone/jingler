@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { act, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AgentEndpointId } from "@jingler/core"
 import type { Session, SubagentFleetEvent, SubagentFleetNode, SubagentFleetSnapshot } from "@jingler/core"
@@ -12,7 +13,8 @@ import {
   disposeConversationActor,
   fleetRecoveryEvents,
   fleetRetryDecision,
-  getConversationActor
+  getConversationActor,
+  useAllChatActivities
 } from "./conversation-registry.js"
 
 import { setVisibleSessionIds } from "./active-session.js"
@@ -152,6 +154,25 @@ describe("conversation registry fleet recovery", () => {
     }] })
     await vi.advanceTimersByTimeAsync(100)
     expect(sessionActivitiesSnapshot()[session.id]).toBeUndefined()
+  })
+
+  it("does not re-notify chat activity subscribers when the activity is unchanged", async () => {
+    vi.useFakeTimers()
+    let renders = 0
+    renderHook(() => {
+      renders += 1
+      return useAllChatActivities()
+    })
+    const actor = getConversationActor(session)
+    actor.send({ type: "RECOVER_SUBAGENT_FLEET", events: [upsert] })
+    await act(() => vi.advanceTimersByTimeAsync(100))
+    const settled = renders
+    actor.send({ type: "RECOVER_SUBAGENT_FLEET", events: [{
+      ...upsert, eventId: "same-activity", node: { ...node, registryRevision: 11, updatedAt: 11 }
+    }] })
+    await act(() => vi.advanceTimersByTimeAsync(100))
+    expect(sessionActivitiesSnapshot()[session.id]?.kind).toBe("delegating")
+    expect(renders).toBe(settled)
   })
 
   it("does not count workflow containers as independently running children", async () => {
