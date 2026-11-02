@@ -8,6 +8,7 @@ import {
   runtimeInvariantLayers
 } from "../prompt/role-profiles.js"
 import { startRegistryMcpRelay } from "../providers/registry-mcp-relay.js"
+import { claudeArtifactCapability, claudeArtifactsAllowed } from "../providers/claude-cli-environment.js"
 import type { ToolRegistry } from "../tools/tool-registry.js"
 import {
   AgentRuntimeError,
@@ -41,6 +42,10 @@ export const prepareNativeRuntimeTools = (
   const registry = yield* (options.createToolRegistry?.(spec, context) ??
     createJinglerTools({ context, cwd: spec.cwd, mcp: context.mcp }).pipe(Effect.mapError(failure)))
   const instructions = yield* Effect.tryPromise({ try: () => instructionLayers(spec.cwd), catch: failure })
+  const tools = [
+    ...registry.capabilitiesFor(spec.role, spec.mode),
+    ...(spec.runtimeId === "claude" && claudeArtifactsAllowed(spec.role, spec.mode) ? [claudeArtifactCapability] : [])
+  ]
   const systemPrompt = yield* Effect.try({
     try: () => new PromptCompiler().compile({
       layers: [
@@ -50,12 +55,12 @@ export const prepareNativeRuntimeTools = (
           id: "runtime.tool-transport", kind: "tools", trust: "trusted", required: true, version: "1",
           content: `The active catalog uses canonical Jingler tool IDs. Their callable names in this harness are ${spec.runtimeId === "opencode" ? "jingler_" : "mcp__jingler__"}<tool ID>. These names refer to the same tools, not extra capabilities. Use those callable names. If the harness defers MCP tools, use its native tool discovery to load the matching Jingler tool before calling it.`
         },
-        ...(registry.capabilitiesFor(spec.role, spec.mode).some(({ id }) => id === "subagent")
+        ...(tools.some(({ id }) => id === "subagent")
           ? [DELEGATION_DEFAULT_PROMPT_LAYER]
           : []),
         ...instructions
       ],
-      tools: registry.capabilitiesFor(spec.role, spec.mode),
+      tools,
       tokenBudget: 8_000
     }).text,
     catch: failure

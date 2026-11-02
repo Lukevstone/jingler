@@ -18,12 +18,20 @@ const contentOf = (record: Record<string, unknown>): ReadonlyArray<Record<string
   })
 }
 
-const textOf = (content: unknown): string =>
+/** Text of a tool_result `content`: a string or an array of text blocks. */
+export const textOf = (content: unknown): string =>
   typeof content === "string"
     ? content
     : Array.isArray(content)
       ? content.map((part) => String(recordOf(part)?.text ?? "")).join("")
       : ""
+
+/** The text of every tool_result in a stream-json `user` record. */
+export const toolResultTexts = (record: unknown): ReadonlyArray<string> => {
+  const parsed = recordOf(record)
+  if (parsed === null) return []
+  return contentOf(parsed).flatMap((part) => part.type === "tool_result" ? [textOf(part.content)] : [])
+}
 
 export interface ToolRescueObservation {
   /** The call to hand pi, once the CLI has rejected a tool pi offered. */

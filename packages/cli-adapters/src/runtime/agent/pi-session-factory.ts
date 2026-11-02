@@ -1,4 +1,5 @@
 import { concreteClaudeModels } from "../providers/claude-cli-models.js"
+import { claudeArtifactCapability, claudeArtifactsAllowed } from "../providers/claude-cli-environment.js"
 import { workspaceRestricted } from "../../workspace-admission.js"
 import {
   createAgentSession,
@@ -310,12 +311,14 @@ const createResources = (
   options: PiSessionFactoryOptions,
   spec: AgentRunSpec,
   registry: ToolRegistry | undefined,
-  nativeSubagentsEnabled: boolean
+  nativeSubagentsEnabled: boolean,
+  claudeArtifacts: boolean
 ) => {
   const runtimeSpec = spec
   const registryTools = [
     ...(registry?.capabilitiesFor(runtimeSpec.role, runtimeSpec.mode) ?? []),
-    ...(nativeSubagentsEnabled ? NATIVE_SUBAGENT_TOOLS : [])
+    ...(nativeSubagentsEnabled ? NATIVE_SUBAGENT_TOOLS : []),
+    ...(claudeArtifacts ? [claudeArtifactCapability] : [])
   ]
   const tools = registryTools
   const eventBus = createEventBus()
@@ -404,7 +407,7 @@ const createEmbeddedSession = (
       if (connection.providerId === "openai-codex") await registerJinglerModels(modelRuntime)
       if (workspaceRestricted(spec.sessionId) && usesClaudeCli(connection)) throw new PiSessionFactoryError({ message: "Restricted sessions requires managed Pi provider access; the Claude CLI subscription route has unsupported process ownership." })
       if (usesClaudeCli(connection)) {
-        registerClaudeCliProvider(modelRuntime, { cwd: spec.cwd })
+        registerClaudeCliProvider(modelRuntime, { cwd: spec.cwd, artifacts: claudeArtifactsAllowed(spec.role, spec.mode) })
       }
       const rawModelId = modelIdForProvider(spec, connection)
       const model = modelRuntime.getModel(connection.providerId, rawModelId)
@@ -682,7 +685,8 @@ const createSessionHandle = (
       options,
       spec,
       registry,
-      nativeSubagentsEnabled
+      nativeSubagentsEnabled,
+      usesClaudeCli(connection) && claudeArtifactsAllowed(spec.role, spec.mode)
     )
     const snapshot = tracker
       ? yield* tracker.capture(spec.cwd).pipe(

@@ -86,6 +86,17 @@ describe("ClaudeAgentRuntime", () => {
       .toContain("JINGLER_TOOL_RESULT_73")
   }, 100_000)
 
+  it("offers Artifact (with unapproved Read) only outside plan, read-only and review runs", () => {
+    const tools = (overrides: Parameters<typeof spec>[0]) => {
+      const args = claudeAgentArguments(spec(overrides), "s")
+      return [args[args.indexOf("--tools") + 1], args[args.indexOf("--allowedTools") + 1]]
+    }
+    expect(tools({ mode: "auto" })).toEqual(["Artifact,Read", "mcp__jingler__* Artifact"])
+    expect(tools({ mode: "plan" })).toEqual(["", "mcp__jingler__*"])
+    expect(tools({ mode: "read-only" })).toEqual(["", "mcp__jingler__*"])
+    expect(tools({ role: "review" })).toEqual(["", "mcp__jingler__*"])
+  })
+
   it("uses native session creation and resume flags", () => {
     expect(claudeAgentArguments(spec(), "new-session")).toContain("--session-id")
     const resumed = claudeAgentArguments(spec({
@@ -343,7 +354,7 @@ console.log(JSON.stringify({type:"result",is_error:false,usage:{}}));
   const args = spawnProcess.mock.calls[0]![1] as string[]
   expect(args).toContain("--strict-mcp-config")
   expect(args[args.indexOf("--tools") + 1]).toBe("Artifact,Read")
-  expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__* Artifact Read")
+  expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__* Artifact")
   const env = spawnProcess.mock.calls[0]![2].env!
   expect(env.CLAUDE_CODE_ARTIFACT).toBe("1")
   expect(env.CLAUDE_CODE_ARTIFACT_AUTO_OPEN).toBe("0")

@@ -59,12 +59,15 @@ describe("Claude CLI provider relay", () => {
       .toContain("JINGLER_TOOL_RESULT_73")
   }, 130_000)
 
-  it("uses stream-json with the Jingler MCP tools plus only the Artifact and Read built-ins", () => {
+  it("uses stream-json with only the Jingler MCP tools unless artifacts are allowed", () => {
     const args = claudeCliArguments(model, context, { reasoning: "high" }, "/tmp/mcp.json")
+    const withArtifacts = claudeCliArguments(model, context, {}, "/tmp/mcp.json", true)
+    expect(args[args.indexOf("--tools") + 1]).toBe("")
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__*")
+    expect(withArtifacts[withArtifacts.indexOf("--tools") + 1]).toBe("Artifact,Read")
+    expect(withArtifacts[withArtifacts.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__* Artifact")
     expect(args).toContain("stream-json")
     expect(args).toContain("--strict-mcp-config")
-    expect(args[args.indexOf("--tools") + 1]).toBe("Artifact,Read")
-    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__* Artifact Read")
     expect(args).toContain("--no-session-persistence")
     expect(args).not.toContain("--max-turns")
     expect(args).toContain("--setting-sources")
@@ -226,6 +229,25 @@ setInterval(() => {}, 1000)
       arguments: { command: "git status" }
     })
     expect(events.some((event) => event.type === "text_delta")).toBe(false)
+  })
+
+  it("echoes a published artifact URL into the reply so it survives the CLI being stopped", async () => {
+    const binary = await executable(`
+process.stdin.resume()
+console.log(JSON.stringify({type:"assistant",message:{content:[{type:"tool_use",id:"art",name:"Artifact",input:{file_path:"/w/p.html"}}]}}))
+console.log(JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"art",content:"Published /w/p.html at https://claude.ai/artifact/N8nThbQe6ZyN8PewWJdfg9 (Version 1, version id 1)"}]}}))
+console.log(JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"r",content:"plain read output"}]}}))
+console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,result:"",usage:{}}))
+`)
+    const stream = createClaudeCliStreamSimple({
+      binary,
+      artifacts: true,
+      checkAuth: async () => {},
+      startToolRelay: async () => ({ mcpConfigPath: "/tmp/mcp.json", toolCall: new Promise(() => {}), close: async () => {} })
+    })(model, context)
+    const events = await collect(stream)
+    const text = events.flatMap((event) => event.type === "text_delta" ? [event.delta] : []).join("")
+    expect(text.trim()).toBe("Published artifact: https://claude.ai/artifact/N8nThbQe6ZyN8PewWJdfg9")
   })
 
   it("hands the CLI's rate-limit report to the Usage panel through the pi bridge", async () => {

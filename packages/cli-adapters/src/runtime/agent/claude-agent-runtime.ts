@@ -21,7 +21,8 @@ import { trackChild } from "../../child-registry.js"
 import { resolveClaudeBinary } from "../../claude-cli-resolver.js"
 import { recordClaudeCliRateLimits } from "../providers/claude-cli-rate-limits.js"
 import type { RegistryMcpRelay } from "../providers/registry-mcp-relay.js"
-import { claudeCliEnvironment, claudeToolArguments } from "../providers/claude-cli-environment.js"
+import { claudeArtifactsAllowed, claudeCliEnvironment, claudeToolArguments } from "../providers/claude-cli-environment.js"
+import { textOf } from "../providers/claude-cli-tool-rescue.js"
 import { ClaudeRequestUsage, ClaudeTurnUsage, claudeUsageTokens } from "../providers/claude-cli-usage.js"
 import { prepareNativeRuntimeTools, type NativeRuntimeToolsOptions } from "./native-runtime-tools.js"
 
@@ -76,7 +77,7 @@ export const claudeAgentArguments = (
   "--system-prompt-snapshot", "off",
   ...(systemPrompt === undefined ? [] : ["--system-prompt", systemPrompt]),
   "--no-chrome",
-  ...claudeToolArguments,
+  ...claudeToolArguments(claudeArtifactsAllowed(spec.role, spec.mode)),
   "--strict-mcp-config",
   ...(mcpConfigPath === undefined ? [] : ["--mcp-config", mcpConfigPath]),
   ...permissionArgs(spec.mode),
@@ -154,13 +155,6 @@ const contentEvents = (value: unknown, external: Set<string>): ReadonlyArray<Str
   })
 }
 
-const resultText = (content: unknown): string =>
-  typeof content === "string"
-    ? content
-    : Array.isArray(content)
-      ? content.map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "").join("")
-      : ""
-
 /** Settles cards for the CLI's own built-ins (Read, Artifact); relayed Jingler tools settle through the relay. */
 const toolResultEvents = (value: Record<string, unknown>, external: Set<string>): ReadonlyArray<StreamEvent> => {
   if (!isRecord(value.message) || !Array.isArray(value.message.content)) return []
@@ -174,7 +168,7 @@ const toolResultEvents = (value: Record<string, unknown>, external: Set<string>)
       meta: null,
       diff: null,
       preview: null,
-      output: resultText(part.content).slice(0, 8_000)
+      output: textOf(part.content).slice(0, 8_000)
     }]
   })
 }

@@ -1,3 +1,5 @@
+import type { AgentRole, RuntimeMode } from "@jingler/core"
+import type { PromptToolCapability } from "../prompt/prompt-compiler.js"
 import { nativeCliEnvironment, withMacCliPath } from "./native-cli-environment.js"
 
 /**
@@ -11,16 +13,34 @@ export const claudeArtifactEnvironment = {
 } as const
 
 /**
- * Built-ins Jingler re-enables beside its own MCP tools. `Read` is required:
- * when `--tools` omits it the CLI adds a Read deny rule that `Artifact` checks
- * before opening the page file, and an MCP read does not satisfy it.
+ * Publishing sends local content to claude.ai, so it follows the same rule as
+ * every mutating Jingler tool: never in plan, read-only or review runs.
  */
-export const claudeBuiltinTools = ["Artifact", "Read"] as const
+export const claudeArtifactsAllowed = (role: AgentRole, mode: RuntimeMode): boolean =>
+  (role === "conversation" || role === "plan-execution") && mode !== "plan" && mode !== "read-only"
 
-export const claudeToolArguments: ReadonlyArray<string> = [
-  "--tools", claudeBuiltinTools.join(","),
-  "--allowedTools", ["mcp__jingler__*", ...claudeBuiltinTools].join(" ")
-]
+/**
+ * `Read` must be enabled because `Artifact` refuses to publish under the deny
+ * rule the CLI adds when `--tools` omits it; an MCP read does not satisfy it.
+ * It is deliberately NOT in `--allowedTools`: unapproved, Claude Code confines
+ * Read to the working directory and `--permission-prompts none` refuses the
+ * rest (verified on 2.1.286: worktree file read, /etc/hosts denied).
+ */
+export const claudeToolArguments = (artifacts: boolean): ReadonlyArray<string> => artifacts
+  ? ["--tools", "Artifact,Read", "--allowedTools", "mcp__jingler__* Artifact"]
+  : ["--tools", "", "--allowedTools", "mcp__jingler__*"]
+
+/** Listed in the compiled active-tools catalog so the prompt agrees with the CLI flags. */
+export const claudeArtifactCapability: PromptToolCapability = {
+  id: "Artifact",
+  version: "1",
+  description: "Claude Code built-in, called as `Artifact` (not mcp__jingler__Artifact). Publishes an HTML or Markdown file as a private claude.ai page the operator can share from its Share menu. Write the page inside the worktree with workspace_write, read it with the built-in `Read` (Artifact refuses files Read has not seen; Read only reaches the worktree), then publish with its file_path. To update, publish again passing the earlier artifact URL as `url`. Always show the operator the returned URL."
+}
+
+/** The URL in Artifact's publish result: `Published <path> at https://claude.ai/artifact/<id> (Version n, …)`. */
+const PUBLISHED_ARTIFACT = /Published .+? at (https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+)/u
+
+export const publishedArtifactUrl = (text: string): string | null => PUBLISHED_ARTIFACT.exec(text)?.[1] ?? null
 
 export const withClaudeCliPath = (
   environment: NodeJS.ProcessEnv,
