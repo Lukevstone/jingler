@@ -1,5 +1,16 @@
 # @jingler/desktop
 
+## 0.18.0
+
+### Minor Changes
+
+- f307a8a: Claude models can now publish native Claude artifacts: shareable claude.ai pages you can send to teammates. Clicking an artifact link in the transcript opens it in the preview dock. This needs a claude.ai login on a Pro, Max, Team or Enterprise plan.
+
+### Patch Changes
+
+- a0e31a4: Jingler no longer runs out of GitHub API quota when you have many workspaces open. Finding new pull requests now makes one GitHub call per repository instead of one per workspace, and pauses while the window isn't focused.
+  - @jingler/plannotator-ext@0.18.0
+
 ## 0.17.3
 
 ### Patch Changes
