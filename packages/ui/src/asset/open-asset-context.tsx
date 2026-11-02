@@ -33,7 +33,12 @@ export interface OpenAssetContextValue {
    * `package.json` by accident.
    */
   worktreeRoot?: string
+  /** Open a claude.ai artifact link inside the app (the preview dock). Absent → system browser. */
+  openArtifact?: (url: string) => void
 }
+
+/** A Claude Code artifact page: `claude.ai/artifact/{id}` or `claude.ai/code/artifact/{uuid}`. */
+export const CLAUDE_ARTIFACT_URL = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+\/?(?:[?#].*)?$/u
 
 const OpenAssetContext = createContext<OpenAssetContextValue | null>(null)
 
@@ -41,11 +46,12 @@ export function OpenAssetProvider({
   open,
   knownFiles,
   worktreeRoot,
+  openArtifact,
   children
 }: OpenAssetContextValue & { children: ReactNode }) {
   const value = useMemo(
-    () => ({ open, knownFiles, worktreeRoot }),
-    [open, knownFiles, worktreeRoot]
+    () => ({ open, knownFiles, worktreeRoot, openArtifact }),
+    [open, knownFiles, worktreeRoot, openArtifact]
   )
   return <OpenAssetContext.Provider value={value}>{children}</OpenAssetContext.Provider>
 }

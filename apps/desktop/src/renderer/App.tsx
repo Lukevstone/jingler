@@ -2049,6 +2049,10 @@ function AuthedApp({
             onOpenTerminal={ctx.onOpenTerminal}
             onOpenPullRequest={ctx.onOpenPullRequest}
             onSelectBrowser={ctx.onSelectBrowser}
+            onOpenArtifact={(url) => {
+              browserDock.forAgent(session.id, session.activeChatId).navigate(url);
+              ctx.onSelectBrowser?.();
+            }}
             onOpenProviderSettings={ctx.onOpenProviderSettings}
             onAddMcp={mcp.add}
             mcpServers={mcp.servers}

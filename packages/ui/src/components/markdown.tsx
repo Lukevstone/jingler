@@ -14,7 +14,7 @@ import { FileIcon } from "./file-icon.js"
 import { isAgentCodeLanguage } from "./beui/agent-code.js"
 import { HtmlPreview } from "./html-preview.js"
 import { MermaidDiagram } from "./mermaid-diagram.js"
-import { useOpenAsset, useOpenPath } from "../asset/open-asset-context.js"
+import { CLAUDE_ARTIFACT_URL, useOpenAsset, useOpenPath } from "../asset/open-asset-context.js"
 import { resolveOpenablePath } from "../asset/path-detect.js"
 
 /**
@@ -252,6 +252,23 @@ function MarkdownAnchor({
   node?: unknown
 }) {
   const open = useOpenPath(href)
+  const openArtifact = useOpenAsset()?.openArtifact
+  if (openArtifact && href && CLAUDE_ARTIFACT_URL.test(href)) {
+    return (
+      <a
+        className={cn("wrap-anywhere font-medium underline", className)}
+        data-streamdown="link"
+        data-claude-artifact=""
+        href={href}
+        draggable={false}
+        onClick={handleLinkClick(() => openArtifact(href))}
+        onAuxClick={event => event.preventDefault()}
+        title="Open artifact in the preview dock"
+      >
+        {children}
+      </a>
+    )
+  }
   if (href?.startsWith("#")) {
     // Sanitize prefixes every id with `user-content-` (footnotes get it twice, as
     // on github.com), so try the fragment with and without that prefix.

@@ -562,7 +562,15 @@
       "apps/desktop/src/renderer/use-native-view-bounds.ts",
       "apps/desktop/src/main/preview-view.ts"
     ],
-    "specs": ["previews.spec.ts"]
+    "specs": ["previews.spec.ts", "claude-artifacts.spec.ts"]
+  },
+  {
+    "paths": [
+      "packages/ui/src/components/markdown.tsx",
+      "packages/ui/src/asset/open-asset-context.tsx",
+      "apps/desktop/src/renderer/conversation-pane.tsx"
+    ],
+    "specs": ["claude-artifacts.spec.ts"]
   },
   {
     "paths": [

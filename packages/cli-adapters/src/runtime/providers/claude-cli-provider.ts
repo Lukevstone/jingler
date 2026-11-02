@@ -26,9 +26,9 @@ import {
   type RelayedToolCall
 } from "./claude-cli-sampling-relay.js"
 import { recordClaudeCliRateLimits } from "./claude-cli-rate-limits.js"
-import { withClaudeCliPath } from "./claude-cli-environment.js"
+import { claudeArtifactEnvironment, claudeToolArguments, publishedArtifactUrl, withClaudeCliPath } from "./claude-cli-environment.js"
 import { ClaudeRequestUsage, ClaudeTurnUsage } from "./claude-cli-usage.js"
-import { makeClaudeCliToolRescue } from "./claude-cli-tool-rescue.js"
+import { makeClaudeCliToolRescue, toolResultTexts } from "./claude-cli-tool-rescue.js"
 
 const ClaudeAuthStatus = Schema.Struct({
   loggedIn: Schema.Boolean,
@@ -80,6 +80,8 @@ const decodeResult = Schema.decodeUnknownOption(ClaudeResult)
 export interface ClaudeCliProviderOptions {
   readonly binary?: string
   readonly cwd?: string
+  /** Offer Claude's native Artifact tool; the caller decides from the run's role and mode. */
+  readonly artifacts?: boolean
   readonly environment?: NodeJS.ProcessEnv
   readonly checkAuth?: (signal?: AbortSignal) => Promise<void>
   readonly startToolRelay?: typeof startClaudeCliToolRelay
@@ -99,7 +101,7 @@ const subscriptionEnvironment = (
     "CLAUDE_CODE_USE_VERTEX",
     "CLAUDE_CODE_USE_FOUNDRY"
   ]) delete sanitized[key]
-  return sanitized
+  return { ...sanitized, ...claudeArtifactEnvironment }
 }
 
 export interface ClaudeLogin {
@@ -296,7 +298,8 @@ export const claudeCliArguments = (
   model: Model<Api>,
   context: TranscriptContext,
   options: SimpleStreamOptions,
-  mcpConfigPath: string
+  mcpConfigPath: string,
+  artifacts = false
 ): ReadonlyArray<string> => [
   "-p",
   "--output-format", "stream-json",
@@ -309,8 +312,7 @@ export const claudeCliArguments = (
   "--no-chrome",
   "--strict-mcp-config",
   "--mcp-config", mcpConfigPath,
-  "--tools", "",
-  "--allowedTools", "mcp__jingler__*",
+  ...claudeToolArguments(artifacts),
   "--model", model.id,
   "--system-prompt", systemPrompt(context),
   ...effortArgs(options.reasoning)
@@ -461,6 +463,19 @@ interface ClaudeOutputState {
   rescued: RelayedToolCall | null
 }
 
+/**
+ * Artifact runs inside this CLI process, which is killed as soon as a relayed
+ * call is captured, so its result never reaches pi's transcript. Echo the
+ * published URL into the reply text so later turns can link or update it.
+ * ponytail: matches on result text, not tool name; track Artifact ids if a Read of such text ever misfires.
+ */
+const artifactNotice = (record: unknown): typeof ClaudeStreamDelta.Type | null => {
+  const url = toolResultTexts(record).map(publishedArtifactUrl).find((found) => found !== null)
+  return url === undefined
+    ? null
+    : { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `\n\nPublished artifact: ${url}\n\n` } } }
+}
+
 /** Only these whole-message records can carry a rejected tool call or the CLI's tool list. */
 const RESCUE_RECORD = /^\{"type":"(?:assistant|user|system)"/u
 
@@ -481,7 +496,7 @@ const readClaudeLine = (
       throw new Error("Claude CLI emitted malformed stream JSON")
     }
     const { call } = rescue(record)
-    if (call === null) return null
+    if (call === null) return artifactNotice(record)
     state.rescued = call
     return "stop"
   }
@@ -579,7 +594,7 @@ async function* runClaudeCli(
     if (options.signal?.aborted) throw new Error("Claude CLI request was aborted")
     child = trackChild((providerOptions.spawnProcess ?? spawn)(
       binary,
-      [...claudeCliArguments(model, context, options, relay.mcpConfigPath)],
+      [...claudeCliArguments(model, context, options, relay.mcpConfigPath, providerOptions.artifacts)],
       { cwd: providerOptions.cwd, env: environment, stdio: ["pipe", "pipe", "pipe"] }
     ))
     const processClosed = new Promise<void>((resolve, reject) => {

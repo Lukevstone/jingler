@@ -186,3 +186,28 @@ describe("Markdown GitHub flavour", () => {
     expect(errors).toEqual([])
   })
 })
+
+describe("Markdown claude.ai artifact links", () => {
+  const link = "https://claude.ai/artifact/N8nThbQe6ZyN8PewWJdfg9"
+
+  it("opens an artifact link through openArtifact instead of the system browser", async () => {
+    const opened: string[] = []
+    const { OpenAssetProvider } = await import("../asset/open-asset-context.js")
+    render(
+      <OpenAssetProvider open={() => {}} knownFiles={new Set()} openArtifact={(url) => opened.push(url)}>
+        <Markdown>{`See [the page](${link}) and [docs](https://example.com).`}</Markdown>
+      </OpenAssetProvider>
+    )
+    await waitFor(() => expect(document.querySelector("[data-claude-artifact]")).not.toBeNull())
+    fireEvent.click(screen.getByText("the page"))
+    expect(opened).toEqual([link])
+    expect(screen.getByText("docs").hasAttribute("data-claude-artifact")).toBe(false)
+  })
+
+  it("leaves artifact links as plain external links without a provider", async () => {
+    render(<Markdown>{`[the page](${link})`}</Markdown>)
+    await settled()
+    expect(document.querySelector("[data-claude-artifact]")).toBeNull()
+    expect(screen.getByText("the page").closest("a")?.getAttribute("target")).toBe("_blank")
+  })
+})
