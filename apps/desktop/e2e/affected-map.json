@@ -253,6 +253,7 @@
       "mcp-server-detail.spec.ts",
       "claude-mcp-inheritance.spec.ts",
       "browser-control-mcp.spec.ts",
+      "browser-debug-tools.spec.ts",
       "settings-pages.spec.ts"
     ]
   },

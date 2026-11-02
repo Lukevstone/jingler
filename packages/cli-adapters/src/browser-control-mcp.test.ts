@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { buildBrowserControlMcp } from "./browser-control-mcp.js"
 import type { BrowserControlSessionPortShape } from "./browser-control-port.js"
+import { stubBrowserSessionPort as stubPort } from "./browser-control-port.stub.js"
 
 /**
  * The agent-facing surface, exercised over a real (in-memory) MCP client so the
@@ -10,21 +11,8 @@ import type { BrowserControlSessionPortShape } from "./browser-control-port.js"
  * tool drives the port, and that a port failure comes back as an `isError`
  * result the model can read rather than a thrown protocol error.
  */
-const stubPort = (
-  over: Partial<BrowserControlSessionPortShape> = {}
-): BrowserControlSessionPortShape => ({
-  navigate: async () => {},
-  screenshot: async () => ({ pngBase64: "AAAA" }),
-  click: async () => {},
-  type: async () => {},
-  readText: async () => ({ text: "" }),
-  evaluate: async () => ({ result: "" }),
-  waitForSelector: async () => {},
-  ...over
-})
-
-const connect = async (port: BrowserControlSessionPortShape): Promise<Client> => {
-  const server = buildBrowserControlMcp(port)
+const connect = async (over: Partial<BrowserControlSessionPortShape>): Promise<Client> => {
+  const server = buildBrowserControlMcp(stubPort(over))
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
   const client = new Client({ name: "test", version: "1.0.0" })
@@ -36,16 +24,27 @@ type Block = { type: string; text?: string; data?: string; mimeType?: string }
 const blocks = (res: unknown) => (res as { content: Array<Block> }).content
 
 describe("buildBrowserControlMcp", () => {
-  it("exposes exactly the seven described browser tools through the standard MCP API", async () => {
-    const client = await connect(stubPort())
+  it("exposes exactly the described browser tools through the standard MCP API", async () => {
+    const client = await connect({})
     const tools = (await client.listTools()).tools
     const names = tools.map((tool) => tool.name).sort()
     expect(names).toStrictEqual([
+      "back",
       "click",
+      "console_logs",
       "evaluate",
+      "get_url",
+      "hover",
       "navigate",
+      "network_request_detail",
+      "network_requests",
+      "press_key",
       "read_text",
+      "reload",
       "screenshot",
+      "scroll",
+      "select_option",
+      "snapshot",
       "type",
       "wait_for_selector"
     ])
@@ -136,7 +135,18 @@ describe("buildBrowserControlMcp", () => {
       type: reject,
       readText: reject,
       evaluate: reject,
-      waitForSelector: reject
+      waitForSelector: reject,
+      hover: reject,
+      pressKey: reject,
+      scroll: reject,
+      selectOption: reject,
+      pageInfo: reject,
+      goBack: reject,
+      reload: reject,
+      snapshot: reject,
+      networkRequests: reject,
+      networkRequestDetail: reject,
+      consoleLogs: reject
     })
     const calls = [
       { name: "navigate", arguments: { url: "http://localhost:5173" } },
@@ -145,7 +155,18 @@ describe("buildBrowserControlMcp", () => {
       { name: "type", arguments: { selector: "#email", text: "a@b.co" } },
       { name: "read_text", arguments: {} },
       { name: "evaluate", arguments: { expression: "document.title" } },
-      { name: "wait_for_selector", arguments: { selector: ".ready" } }
+      { name: "wait_for_selector", arguments: { selector: ".ready" } },
+      { name: "hover", arguments: { selector: "#menu" } },
+      { name: "press_key", arguments: { key: "Enter" } },
+      { name: "scroll", arguments: { deltaY: 200 } },
+      { name: "select_option", arguments: { selector: "select", value: "a" } },
+      { name: "get_url", arguments: {} },
+      { name: "back", arguments: {} },
+      { name: "reload", arguments: {} },
+      { name: "snapshot", arguments: {} },
+      { name: "network_requests", arguments: {} },
+      { name: "network_request_detail", arguments: { id: "1" } },
+      { name: "console_logs", arguments: {} }
     ]
 
     const results = await Promise.all(calls.map((call) => client.callTool(call)))
@@ -156,7 +177,7 @@ describe("buildBrowserControlMcp", () => {
       )
     })
 
-    expect((await client.listTools()).tools).toHaveLength(7)
+    expect((await client.listTools()).tools).toHaveLength(18)
   })
 
   it("returns validation failures as MCP errors without invoking the port", async () => {
@@ -176,6 +197,6 @@ describe("buildBrowserControlMcp", () => {
     expect(result.isError).toBe(true)
     expect(blocks(result)[0]?.text).toContain("Input validation error")
     expect(called).toBe(false)
-    expect((await client.listTools()).tools).toHaveLength(7)
+    expect((await client.listTools()).tools).toHaveLength(18)
   })
 })

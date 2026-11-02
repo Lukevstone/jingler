@@ -937,6 +937,22 @@ const responsesFor = (fixture: E2ePiFixture): ReadonlyArray<FauxResponseStep> =>
         }),
         fauxAssistantMessage("Browser workflow completed through pi.")
       ]
+    case "browser-debug":
+      return [
+        (context) => callTool("mcp__jingler-browser__navigate", { url: browserUrlFrom(context) }, "bd-nav"),
+        callTool("mcp__jingler-browser__click", { selector: "#go" }, "bd-click"),
+        callTool("mcp__jingler-browser__wait_for_selector", { selector: "#done" }, "bd-wait"),
+        callTool("mcp__jingler-browser__console_logs", {}, "bd-console"),
+        callTool("mcp__jingler-browser__network_requests", { onlyFailed: true }, "bd-network"),
+        (context) => {
+          const results = context.messages
+            .filter((message) => message.role === "toolResult")
+            .slice(-2)
+            .map((message) => toolResultText(message))
+            .join("\n")
+          return fauxAssistantMessage(`Browser debug results:\n${results}`)
+        }
+      ]
     case "mcp-needs-auth":
       return [
         fauxAssistantMessage(fauxToolCall("mcp__runpod__list_pods", {}), { stopReason: "toolUse" }),
