@@ -57,4 +57,22 @@ describe("ChangesExplorerPanel", () => {
     await waitFor(() => expect(rpc.sessionsDiff).toHaveBeenCalledWith("s1", "c2"))
     expect(rpc.sessionsDiff).toHaveBeenCalledWith("s1", "primary")
   })
+
+  it("opens the active repo, collapses the rest, and auto-opens a newly active repo", async () => {
+    vi.mocked(rpc.sessionsDiff).mockResolvedValue({ patch: "", files: [], lineLimit: 5000 } as never)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const panel = (s: Session) => (
+      <QueryClientProvider client={client}>
+        <ChangesExplorerPanel session={s} connected activePath={null} onOpenPath={() => {}} />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(panel(session))
+    const isOpen = (id: string) => (screen.getByTestId(`changes-checkout-${id}`) as HTMLDetailsElement).open
+    expect(isOpen("primary")).toBe(true)
+    expect(isOpen("c2")).toBe(false)
+    // The agent switches repo: the new one opens, the one already open stays open.
+    rerender(panel({ ...session, activeCheckoutId: "c2" } as Session))
+    await waitFor(() => expect(isOpen("c2")).toBe(true))
+    expect(isOpen("primary")).toBe(true)
+  })
 })
