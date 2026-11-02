@@ -26,7 +26,7 @@ import {
   type RelayedToolCall
 } from "./claude-cli-sampling-relay.js"
 import { recordClaudeCliRateLimits } from "./claude-cli-rate-limits.js"
-import { withClaudeCliPath } from "./claude-cli-environment.js"
+import { claudeArtifactEnvironment, claudeToolArguments, withClaudeCliPath } from "./claude-cli-environment.js"
 import { ClaudeRequestUsage, ClaudeTurnUsage } from "./claude-cli-usage.js"
 import { makeClaudeCliToolRescue } from "./claude-cli-tool-rescue.js"
 
@@ -99,7 +99,7 @@ const subscriptionEnvironment = (
     "CLAUDE_CODE_USE_VERTEX",
     "CLAUDE_CODE_USE_FOUNDRY"
   ]) delete sanitized[key]
-  return sanitized
+  return { ...sanitized, ...claudeArtifactEnvironment }
 }
 
 export interface ClaudeLogin {
@@ -309,8 +309,7 @@ export const claudeCliArguments = (
   "--no-chrome",
   "--strict-mcp-config",
   "--mcp-config", mcpConfigPath,
-  "--tools", "",
-  "--allowedTools", "mcp__jingler__*",
+  ...claudeToolArguments,
   "--model", model.id,
   "--system-prompt", systemPrompt(context),
   ...effortArgs(options.reasoning)

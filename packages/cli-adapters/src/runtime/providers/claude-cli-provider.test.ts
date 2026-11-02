@@ -59,11 +59,12 @@ describe("Claude CLI provider relay", () => {
       .toContain("JINGLER_TOOL_RESULT_73")
   }, 130_000)
 
-  it("uses stream-json with only the authenticated Jingler MCP tools", () => {
+  it("uses stream-json with the Jingler MCP tools plus only the Artifact and Read built-ins", () => {
     const args = claudeCliArguments(model, context, { reasoning: "high" }, "/tmp/mcp.json")
     expect(args).toContain("stream-json")
     expect(args).toContain("--strict-mcp-config")
-    expect(args).toContain("mcp__jingler__*")
+    expect(args[args.indexOf("--tools") + 1]).toBe("Artifact,Read")
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__* Artifact Read")
     expect(args).toContain("--no-session-persistence")
     expect(args).not.toContain("--max-turns")
     expect(args).toContain("--setting-sources")

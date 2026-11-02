@@ -21,7 +21,7 @@ import { trackChild } from "../../child-registry.js"
 import { resolveClaudeBinary } from "../../claude-cli-resolver.js"
 import { recordClaudeCliRateLimits } from "../providers/claude-cli-rate-limits.js"
 import type { RegistryMcpRelay } from "../providers/registry-mcp-relay.js"
-import { claudeCliEnvironment } from "../providers/claude-cli-environment.js"
+import { claudeCliEnvironment, claudeToolArguments } from "../providers/claude-cli-environment.js"
 import { ClaudeRequestUsage, ClaudeTurnUsage, claudeUsageTokens } from "../providers/claude-cli-usage.js"
 import { prepareNativeRuntimeTools, type NativeRuntimeToolsOptions } from "./native-runtime-tools.js"
 
@@ -76,8 +76,7 @@ export const claudeAgentArguments = (
   "--system-prompt-snapshot", "off",
   ...(systemPrompt === undefined ? [] : ["--system-prompt", systemPrompt]),
   "--no-chrome",
-  "--tools", "",
-  "--allowedTools", "mcp__jingler__*",
+  ...claudeToolArguments,
   "--strict-mcp-config",
   ...(mcpConfigPath === undefined ? [] : ["--mcp-config", mcpConfigPath]),
   ...permissionArgs(spec.mode),
@@ -133,7 +132,7 @@ const usageEvent = (usage: ClaudeRequestUsage): StreamEvent => ({
   tokens: claudeUsageTokens(usage)
 })
 
-const contentEvents = (value: unknown): ReadonlyArray<StreamEvent> => {
+const contentEvents = (value: unknown, external: Set<string>): ReadonlyArray<StreamEvent> => {
   if (!isRecord(value) || value.type !== "assistant" || !isRecord(value.message)) return []
   const { content } = value.message
   if (!Array.isArray(content)) return []
@@ -148,9 +147,35 @@ const contentEvents = (value: unknown): ReadonlyArray<StreamEvent> => {
       typeof part.name === "string" &&
       !part.name.startsWith("mcp__jingler__")
     ) {
+      external.add(part.id)
       return [{ _tag: "ToolStart", id: part.id, name: part.name, target: null }]
     }
     return []
+  })
+}
+
+const resultText = (content: unknown): string =>
+  typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "").join("")
+      : ""
+
+/** Settles cards for the CLI's own built-ins (Read, Artifact); relayed Jingler tools settle through the relay. */
+const toolResultEvents = (value: Record<string, unknown>, external: Set<string>): ReadonlyArray<StreamEvent> => {
+  if (!isRecord(value.message) || !Array.isArray(value.message.content)) return []
+  return value.message.content.flatMap((part): ReadonlyArray<StreamEvent> => {
+    if (!isRecord(part) || part.type !== "tool_result" || typeof part.tool_use_id !== "string") return []
+    if (!external.delete(part.tool_use_id)) return []
+    return [{
+      _tag: "ToolEnd",
+      id: part.tool_use_id,
+      status: part.is_error === true ? "error" : "success",
+      meta: null,
+      diff: null,
+      preview: null,
+      output: resultText(part.content).slice(0, 8_000)
+    }]
   })
 }
 
@@ -169,10 +194,17 @@ const streamEvents = (value: Record<string, unknown>): ReadonlyArray<StreamEvent
     : []
 }
 
+const assistantEvents = (value: Record<string, unknown>, external: Set<string>): ReadonlyArray<StreamEvent> => {
+  const usage = value.parent_tool_use_id == null && isRecord(value.message) && isRecord(value.message.usage)
+    ? [usageEvent(decodeRequestUsage(value.message.usage))]
+    : []
+  return [...contentEvents(value, external), ...usage]
+}
+
 const reportedCostUsd = (result: Record<string, unknown>): number =>
   typeof result.total_cost_usd === "number" ? result.total_cost_usd : 0
 
-const decodeLine = (line: string): ReadonlyArray<StreamEvent> => {
+const decodeLine = (line: string, external: Set<string> = new Set()): ReadonlyArray<StreamEvent> => {
   let value: unknown
   try {
     value = JSON.parse(line)
@@ -184,12 +216,8 @@ const decodeLine = (line: string): ReadonlyArray<StreamEvent> => {
   // Usage panel and never the conversation.
   if (recordClaudeCliRateLimits(value)) return []
   if (value.type === "stream_event") return streamEvents(value)
-  if (value.type === "assistant") {
-    const usage = value.parent_tool_use_id == null && isRecord(value.message) && isRecord(value.message.usage)
-      ? [usageEvent(decodeRequestUsage(value.message.usage))]
-      : []
-    return [...contentEvents(value), ...usage]
-  }
+  if (value.type === "assistant") return assistantEvents(value, external)
+  if (value.type === "user") return toolResultEvents(value, external)
   if (value.type !== "result") return []
   if (typeof value.is_error !== "boolean") {
     throw new Error("Claude CLI emitted a malformed result")
@@ -284,10 +312,11 @@ async function* claudeOutput(
   started: StreamEvent,
   onTerminal: () => void
 ): AsyncGenerator<StreamEvent> {
+  const external = new Set<string>()
   for await (const raw of boundedLines(child)) {
     const line = raw.replaceAll(secret, "[redacted]")
     if (!protocolLine(line)) throw new Error("Claude CLI emitted an invalid protocol record")
-    const events = decodeLine(line)
+    const events = decodeLine(line, external)
     if (!state.started) {
       state.started = true
       yield started

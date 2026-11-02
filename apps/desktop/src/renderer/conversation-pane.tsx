@@ -467,6 +467,7 @@ export function ConversationPane({
   onOpenTerminal,
   onOpenPullRequest,
   onSelectBrowser,
+  onOpenArtifact,
   onOpenProviderSettings,
   onAddMcp,
   mcpServers,
@@ -516,6 +517,8 @@ export function ConversationPane({
   onOpenPullRequest?: () => void
   /** Open the Browser view; the `Preview ready · Open browser` chip's path. */
   onSelectBrowser?: () => void
+  /** Open a claude.ai artifact link in this chat's preview dock. */
+  onOpenArtifact?: (url: string) => void
   /** Open provider settings for auth, target, migration, or certification recovery. */
   onOpenProviderSettings?: () => void
   /** Add or repair global MCP connections from the composer/chat. */
@@ -1117,6 +1120,7 @@ export function ConversationPane({
         open={openAsset}
         knownFiles={knownFiles}
         worktreeRoot={checkout.worktreePath}
+        openArtifact={onOpenArtifact}
       >
         <div className="flex min-h-0 flex-1 flex-col">
           {planSurface}
@@ -1135,6 +1139,7 @@ export function ConversationPane({
         open={openAsset}
         knownFiles={knownFiles}
         worktreeRoot={checkout.worktreePath}
+        openArtifact={onOpenArtifact}
       >
     <AttachmentSourceProvider resolve={resolveAttachment}>
     {/* `min-w-0` is load-bearing on BOTH rows, not decoration. A flex item

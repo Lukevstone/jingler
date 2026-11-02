@@ -342,8 +342,11 @@ console.log(JSON.stringify({type:"result",is_error:false,usage:{}}));
   expect(spawnProcess).toHaveBeenCalledTimes(1)
   const args = spawnProcess.mock.calls[0]![1] as string[]
   expect(args).toContain("--strict-mcp-config")
-  expect(args[args.indexOf("--tools") + 1]).toBe("")
-  expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__*")
+  expect(args[args.indexOf("--tools") + 1]).toBe("Artifact,Read")
+  expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__jingler__* Artifact Read")
+  const env = spawnProcess.mock.calls[0]![2].env!
+  expect(env.CLAUDE_CODE_ARTIFACT).toBe("1")
+  expect(env.CLAUDE_CODE_ARTIFACT_AUTO_OPEN).toBe("0")
   await expect(stat(args[args.indexOf("--mcp-config") + 1]!)).rejects.toThrow()
 })
 
@@ -384,6 +387,30 @@ it("maps thinking, external tools and failure without a success terminal", async
     { _tag: "Thinking", text: "consider", seconds: null, done: true },
     { _tag: "ToolStart", id: "tool", name: "Read", target: null },
     { _tag: "Failed", message: "fixture failure" }
+  ])
+})
+
+it("settles built-in tool cards (Artifact) from tool_result records and ignores relayed ones", async () => {
+  stubRelay()
+  const published = "Published /tmp/p.html at https://claude.ai/artifact/N8nThbQe6ZyN8PewWJdfg9 (Version 1)"
+  const records = [
+    { type: "assistant", message: { content: [
+      { type: "tool_use", id: "art", name: "Artifact" },
+      { type: "tool_use", id: "bridge", name: "mcp__jingler__echo" }
+    ] } },
+    { type: "user", message: { content: [
+      { type: "tool_result", tool_use_id: "bridge", content: "relayed" },
+      { type: "tool_result", tool_use_id: "art", content: [{ type: "text", text: published }] }
+    ] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "art", content: "duplicate" }] } },
+    { type: "result", is_error: true, result: "stop" }
+  ]
+  const binary = await executable(`process.stdin.resume(); for (const record of ${JSON.stringify(records)}) console.log(JSON.stringify(record))`)
+  const events = [...await Effect.runPromise(makeClaudeAgentRuntime({ binary }).run(spec(), context).pipe(Stream.runCollect))]
+  expect(events.slice(1)).toEqual([
+    { _tag: "ToolStart", id: "art", name: "Artifact", target: null },
+    { _tag: "ToolEnd", id: "art", status: "success", meta: null, diff: null, preview: null, output: published },
+    { _tag: "Failed", message: "stop" }
   ])
 })
 
