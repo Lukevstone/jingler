@@ -1420,6 +1420,8 @@ export const SessionPrStatus = Schema.Struct({
   checks: Schema.NullOr(PrCheckStatus),
   /** Passing/total individual checks for the header `a/b` badge; absent when there are none. */
   checkCounts: Schema.optional(Schema.Struct({ passing: Schema.Number, total: Schema.Number })),
+  /** The PR's last-updated time; the PR tab reloads its full view when this moves. */
+  updatedAt: Schema.optional(Schema.String),
 });
 export type SessionPrStatus = Schema.Schema.Type<typeof SessionPrStatus>;
 

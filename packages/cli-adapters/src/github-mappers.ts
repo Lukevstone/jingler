@@ -551,15 +551,19 @@ const prStateOf = (pr: ReturnType<typeof jsonRecord>): PrState | null => {
 }
 
 export const mapPrState = (raw: unknown, checks: ReadonlyArray<PrCheck>): SessionPrStatus | null => {
-  const state = prStateOf(jsonRecord(raw))
+  const pr = jsonRecord(raw)
+  const state = prStateOf(pr)
   if (state === null) return null
+  const updated = pr.updated_at ?? pr.updatedAt
+  const stamp = typeof updated === "string" ? { updatedAt: updated } : {}
   if (state === "closed" || state === "merged" || checks.length === 0) {
-    return { state, checks: state === "closed" || state === "merged" ? null : rollupChecks(checks) }
+    return { state, checks: state === "closed" || state === "merged" ? null : rollupChecks(checks), ...stamp }
   }
   return {
     state,
     checks: rollupChecks(checks),
-    checkCounts: { passing: checks.filter((check) => check.status === "pass").length, total: checks.length }
+    checkCounts: { passing: checks.filter((check) => check.status === "pass").length, total: checks.length },
+    ...stamp
   }
 }
 

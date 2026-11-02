@@ -11,7 +11,7 @@ import { PR_REFRESH_MS, usePullRequest } from "./use-pull-request.js"
 vi.mock("./rpc-client.js", () => ({
   rpc: {
     githubPr: vi.fn(),
-    githubDetectPr: vi.fn(),
+    githubPrState: vi.fn(),
     githubMarkReady: vi.fn()
   }
 }))
@@ -22,9 +22,13 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-it("refreshes the visible pull request every ten seconds", async () => {
+it("polls the cheap PR state and reloads the full view only when it changes", async () => {
   vi.useFakeTimers()
   vi.mocked(rpc.githubPr).mockResolvedValue(null)
+  vi.mocked(rpc.githubPrState)
+    .mockResolvedValueOnce({ state: "open", checks: "running", updatedAt: "t1" })
+    .mockResolvedValueOnce({ state: "open", checks: "running", updatedAt: "t1" })
+    .mockResolvedValue({ state: "open", checks: "pass", updatedAt: "t2" })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -53,11 +57,22 @@ it("refreshes the visible pull request every ten seconds", async () => {
     baseBranch: "main",
     mode: "auto"
   })
-  renderHook(() => usePullRequest(session, { connected: true, autoDetect: false }), { wrapper })
+  renderHook(() => usePullRequest(session, { connected: true }), { wrapper })
   await act(async () => {})
   expect(rpc.githubPr).toHaveBeenCalledTimes(1)
+  expect(rpc.githubPrState).toHaveBeenCalledTimes(1)
 
+  // Unchanged state: the expensive full read is not repeated.
   await act(async () => vi.advanceTimersByTimeAsync(PR_REFRESH_MS))
+  expect(rpc.githubPrState).toHaveBeenCalledTimes(2)
+  expect(rpc.githubPr).toHaveBeenCalledTimes(1)
+
+  // Checks moved: one full reload.
+  await act(async () => vi.advanceTimersByTimeAsync(PR_REFRESH_MS))
+  expect(rpc.githubPrState).toHaveBeenCalledTimes(3)
+  // The reload is triggered from an effect after the new state lands; react-query
+  // delivers that state on a setTimeout(0), which fake timers must advance.
+  await act(async () => vi.advanceTimersByTimeAsync(10))
   expect(rpc.githubPr).toHaveBeenCalledTimes(2)
   client.clear()
 })
@@ -70,7 +85,7 @@ it("flips a draft PR to open in the cache once markReady succeeds", async () => 
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   )
   const session = { id: "session-1", prNumber: 320 } as never
-  const { result } = renderHook(() => usePullRequest(session, { connected: true, autoDetect: false }), { wrapper })
+  const { result } = renderHook(() => usePullRequest(session, { connected: true }), { wrapper })
   await waitFor(() => expect(result.current.pr?.state).toBe("draft"))
   await act(async () => result.current.markReady())
   await waitFor(() => expect(result.current.pr).toMatchObject({ state: "open", isDraft: false }))

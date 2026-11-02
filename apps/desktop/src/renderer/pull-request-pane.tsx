@@ -22,7 +22,6 @@ export function PullRequestPane({
   session,
   project,
   connected,
-  autoDetect,
   viewerLogin,
   connectionMessage,
   connectionActionLabel,
@@ -35,7 +34,6 @@ export function PullRequestPane({
   session: Session
   project?: Project
   connected: boolean
-  autoDetect: boolean
   /** The authenticated GitHub login (to disable approving your own PR). */
   viewerLogin?: string | null
   connectionMessage?: string
@@ -78,7 +76,7 @@ export function PullRequestPane({
     openOnGithub,
     conflictedFiles,
     resolveConflicts
-  } = usePullRequest(session, { connected, autoDetect, onPrLinked, prNumber: shownPr })
+  } = usePullRequest(session, { connected, prNumber: shownPr })
   const publish = usePublish(session, onPrLinked, onPublishCheckpoint)
   const workflow = useWorkspaceWorkflow(session, project, onSession)
 

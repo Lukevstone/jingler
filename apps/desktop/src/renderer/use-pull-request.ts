@@ -8,9 +8,9 @@
  * so its work + any approval gates/questions surface in the Conversation tab.
  * Keeps `@jingler/ui`'s `PullRequestView` presentational.
  */
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { PrMergeMethod, PullRequest, ReviewSubmitKind, Session } from "@jingler/core"
+import type { PrMergeMethod, PullRequest, ReviewSubmitKind, Session, SessionPrStatus } from "@jingler/core"
 import { activeCheckoutOf } from "@jingler/core"
 import { rpc } from "./rpc-client.js"
 import { githubPollInterval, retryUnlessRateLimited } from "./github-poll.js"
@@ -24,7 +24,12 @@ const reviewPrompt = (kind: ReviewSubmitKind, body: string): string => {
   return `A reviewer ${verb} on this pull request:\n\n${body}\n\nPlease address this feedback.`
 }
 
-export const PR_REFRESH_MS = 10_000
+/** How often the PR tab polls the cheap PR state (2–3 GitHub requests); the full view reloads only when it changes. */
+export const PR_REFRESH_MS = 30_000
+
+/** What, when it changes, means the full PR view is out of date. */
+export const prStateSignature = (status: SessionPrStatus | null | undefined): string | null =>
+  status ? [status.state, status.checks, status.checkCounts?.passing, status.checkCounts?.total, status.updatedAt].join("|") : null
 
 export const prKey = (sessionId: string, prNumber: number | null) =>
   ["github", "pr", sessionId, prNumber] as const
@@ -74,36 +79,58 @@ export interface PullRequestState {
   readonly resolveConflicts: (prompt: string) => void
 }
 
+/**
+ * Poll the cheap PR state (2–3 GitHub requests) and invalidate `fullKey` only when
+ * it changes. The full read behind `fullKey` is never polled itself.
+ */
+export function useReloadOnPrChange(
+  fullKey: ReadonlyArray<unknown>,
+  sessionId: string,
+  prNumber: number | null,
+  checkoutId?: string
+): void {
+  const qc = useQueryClient()
+  const stateQuery = useQuery({
+    queryKey: ["github", "pr-state-poll", sessionId, checkoutId ?? null, prNumber] as const,
+    queryFn: () => rpc.githubPrState(sessionId, prNumber ?? undefined, checkoutId),
+    enabled: prNumber != null,
+    refetchInterval: githubPollInterval(PR_REFRESH_MS),
+    refetchIntervalInBackground: false,
+    retry: retryUnlessRateLimited
+  })
+  const signature = prStateSignature(stateQuery.data)
+  const seen = useRef(signature)
+  const keyRef = useRef(fullKey)
+  keyRef.current = fullKey
+  useEffect(() => {
+    const previous = seen.current
+    seen.current = signature
+    if (previous !== null && signature !== null && previous !== signature) {
+      void qc.invalidateQueries({ queryKey: keyRef.current })
+    }
+  }, [signature, qc])
+}
+
 export function usePullRequest(
   session: Session,
   opts: {
     connected: boolean
-    autoDetect: boolean
-    onPrLinked?: (sessionId: string, prNumber: number) => void
     /** The stack layer to show; defaults to the session's own PR. */
     prNumber?: number | null
   }
 ): PullRequestState {
   const qc = useQueryClient()
-  const { autoDetect, onPrLinked } = opts
   const prNumber = opts.prNumber ?? activeCheckoutOf(session).prNumber
 
+  // The full view costs ~12 GitHub requests, so it is never polled: a cheap state
+  // read polls instead, and only a change in it (new push, checks, comment) reloads.
   const query = useQuery({
     queryKey: prKey(session.id, prNumber),
-    // Checks and review state change outside Jingler. Keep the visible PR current
-    // without polling hidden/background windows.
-    refetchInterval: githubPollInterval(PR_REFRESH_MS),
-    refetchIntervalInBackground: false,
-    retry: retryUnlessRateLimited,
-    queryFn: async () => {
-      // Re-detect even when linked: a session can outlive one PR and open another.
-      if (autoDetect) {
-        const n = await rpc.githubDetectPr(session.id).catch(() => null)
-        if (n != null && n !== activeCheckoutOf(session).prNumber) onPrLinked?.(session.id, n)
-      }
-      return rpc.githubPr(session.id, prNumber ?? undefined)
-    }
+    queryFn: () => rpc.githubPr(session.id, prNumber ?? undefined),
+    staleTime: PR_REFRESH_MS,
+    retry: retryUnlessRateLimited
   })
+  useReloadOnPrChange(prKey(session.id, prNumber), session.id, prNumber)
 
   // Route an instruction to the session's agent as a NORMAL conversation turn
   // (via the persistent actor), so its work + any approval gates / questions are

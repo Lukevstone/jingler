@@ -1390,7 +1390,8 @@ function AuthedApp({
       // Poll so a PR merged/closed on GitHub badges its session live instead of
       // only on a cold app relaunch (the query would otherwise never re-fetch).
       refetchInterval: ARCHIVE_POLL_MS,
-      refetchIntervalInBackground: true,
+      // Unfocused windows stop polling; refetchOnWindowFocus catches up on return.
+      refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
     })),
     combine: (results) => {
@@ -2117,7 +2118,6 @@ function AuthedApp({
               session={session}
               project={projectController.projects.find((project) => project.id === activeCheckoutOf(session).projectId)}
               connected={sessionConnected}
-              autoDetect={autoDetect}
               viewerLogin={github.connection.user?.login}
               connectionMessage={
                 github.connection.connected

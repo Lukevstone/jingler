@@ -950,7 +950,7 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
     issueViewBySlug: (repository: string, number: number) => issueView(null, repository, number),
     prState: (cwd: string, number: number): Effect.Effect<SessionPrStatus | null, GitHubApiError, CommandExecutor.CommandExecutor> =>
       json(cwd, [
-        "pr", "view", String(number), "--json", "state,isDraft,mergedAt,statusCheckRollup"
+        "pr", "view", String(number), "--json", "state,isDraft,mergedAt,updatedAt,statusCheckRollup"
       ]).pipe(Effect.map((raw) => mapPrState(raw, mapPrView(raw).checks))),
     prHeadSha: (cwd: string, number: number) =>
       execute(cwd, ["pr", "view", String(number), "--json", "headRefOid", "--jq", ".headRefOid"]),
