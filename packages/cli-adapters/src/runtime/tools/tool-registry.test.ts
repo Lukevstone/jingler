@@ -95,6 +95,24 @@ describe("ToolRegistry", () => {
     expect(result.preview?.length).toBeLessThanOrEqual(8)
   })
 
+  it("splits image blocks out so they skip the text budget", async () => {
+    const registry = new ToolRegistry()
+    const data = "A".repeat(50_000)
+    registry.register(definition({
+      outputBudget: 200,
+      execute: async () => ({ content: [{ type: "image", data, mimeType: "image/png" }, { type: "text", text: "cut" }] })
+    }))
+    const result = await Effect.runPromise(registry.execute({
+      id: "workspace_read",
+      arguments: { path: "README.md" },
+      role: "conversation",
+      mode: "ask"
+    }))
+    expect(result.status).toBe("success")
+    expect(result.images).toStrictEqual([{ data, mimeType: "image/png" }])
+    expect(result.value).toStrictEqual({ content: [{ type: "text", text: "cut" }] })
+  })
+
   it("publishes only settled successful values that fit the output budget", async () => {
     const onSuccessfulResult = vi.fn()
     const registry = new ToolRegistry({

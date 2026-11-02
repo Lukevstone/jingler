@@ -53,7 +53,7 @@ import type {
   BrowserSnapshotElement
 } from "@jingler/cli-adapters"
 import { pathToFileURL } from "node:url"
-import { BrowserWindow, session as electronSession, WebContentsView } from "electron"
+import { BrowserWindow, nativeImage, session as electronSession, WebContentsView } from "electron"
 import { Context, Duration, Effect, Layer } from "effect"
 import { type BrowserRecorder, createBrowserRecorder } from "./browser-recorder.js"
 import {
@@ -88,6 +88,97 @@ export const browserPartitionForAgent = (sessionId: string, chatId: string): str
 
 /** Hard ceiling on `controlWaitForSelector`, so a bad caller can't pin the RPC. */
 const MAX_WAIT_MS = 30_000
+/** Chromium's max texture height; a taller full-page capture is cut and says so. */
+const MAX_FULL_PAGE_PX = 16_384
+/**
+ * The `Page.captureScreenshot` clip for a full-page capture, and a note when the
+ * page is taller than Chromium can capture in one texture. Exported for tests.
+ */
+export const fullPageClip = (content: { width: number; height: number }) => {
+  const height = Math.ceil(content.height)
+  return {
+    // ponytail: capped at Chromium's texture limit and reported; tile if taller pages matter.
+    clip: { x: 0, y: 0, width: Math.ceil(content.width), height: Math.min(height, MAX_FULL_PAGE_PX), scale: 1 },
+    note: height > MAX_FULL_PAGE_PX
+      ? `Page is ${height}px tall; only the top ${MAX_FULL_PAGE_PX}px were captured. Scroll and take viewport screenshots for the rest.`
+      : undefined
+  }
+}
+
+/**
+ * Provider image limits (Claude vision docs: 8000px per side; 5MB per image on
+ * Bedrock/Vertex). Bytes are raw PNG, kept under 5MB once base64-encoded.
+ */
+export const MAX_IMAGE_SIDE_PX = 8_000
+export const MAX_IMAGE_BYTES = 3_700_000
+
+/** Scale factor (<= 1) that brings a PNG within provider limits. Exported for tests. */
+export const providerFitScale = (width: number, height: number, bytes: number): number =>
+  Math.min(
+    1,
+    MAX_IMAGE_SIDE_PX / Math.max(width, height, 1),
+    // PNG size grows roughly with area; 0.9 leaves headroom for the estimate.
+    bytes > MAX_IMAGE_BYTES ? Math.sqrt(MAX_IMAGE_BYTES / bytes) * 0.9 : 1
+  )
+
+/** Downscale a screenshot until it fits provider limits, noting when it did. */
+const fitScreenshot = (png: Buffer, note?: string): { pngBase64: string; note?: string } => {
+  let image = nativeImage.createFromBuffer(png)
+  const original = image.getSize()
+  let bytes = png
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { width, height } = image.getSize()
+    const scale = providerFitScale(width, height, bytes.length)
+    if (scale >= 1) break
+    image = image.resize({ width: Math.max(1, Math.floor(width * scale)), height: Math.max(1, Math.floor(height * scale)) })
+    bytes = image.toPNG()
+  }
+  const final = image.getSize()
+  const scaled = final.width === original.width
+    ? undefined
+    : `Downscaled from ${original.width}x${original.height} to ${final.width}x${final.height} to fit model image limits.`
+  const notes = [note, scaled].filter((n): n is string => n !== undefined)
+  return notes.length === 0
+    ? { pngBase64: bytes.toString("base64") }
+    : { pngBase64: bytes.toString("base64"), note: notes.join(" ") }
+}
+
+/** How long back/reload may take before the tool reports failure. */
+const NAVIGATION_TIMEOUT_MS = 15_000
+
+/**
+ * Run `start` and resolve once the main frame finishes loading (or commits a
+ * same-document history step); reject on a main-frame load failure or timeout.
+ * Exported for tests.
+ */
+export const settleNavigation = (
+  wc: Pick<Electron.WebContents, "on" | "off">,
+  start: () => void,
+  timeoutMs = NAVIGATION_TIMEOUT_MS
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const done = (error?: Error) => {
+      clearTimeout(timer)
+      wc.off("did-finish-load", onFinish)
+      wc.off("did-navigate-in-page", onInPage)
+      wc.off("did-fail-load", onFail)
+      if (error) reject(error)
+      else resolve()
+    }
+    const onFinish = () => done()
+    const onInPage = (_e: unknown, _url: string, isMainFrame: boolean) => {
+      if (isMainFrame) done()
+    }
+    const onFail = (_e: unknown, code: number, description: string, url: string, isMainFrame: boolean) => {
+      const failure = previewLoadFailure(code, description, isMainFrame)
+      if (failure !== null) done(new Error(`${failure}: ${url}`))
+    }
+    const timer = setTimeout(() => done(new Error(`Navigation did not finish within ${timeoutMs}ms`)), timeoutMs)
+    wc.on("did-finish-load", onFinish)
+    wc.on("did-navigate-in-page", onInPage)
+    wc.on("did-fail-load", onFail)
+    start()
+  })
 
 /**
  * Main→renderer push: "an agent is driving the browser — open the Preview dock
@@ -185,7 +276,7 @@ export interface PreviewViewServiceShape {
     sessionId: string,
     chatId: string,
     options?: BrowserScreenshotOptions
-  ) => Effect.Effect<{ pngBase64: string }, BrowserControlError>
+  ) => Effect.Effect<{ pngBase64: string; note?: string }, BrowserControlError>
   readonly controlHover: (sessionId: string, chatId: string, selector: string) => Effect.Effect<void, BrowserControlError>
   readonly controlPressKey: (sessionId: string, chatId: string, key: string, selector?: string) => Effect.Effect<void, BrowserControlError>
   readonly controlScroll: (
@@ -727,28 +818,22 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
         if (options.selector !== undefined) {
           const rect = await wc.executeJavaScript(elementRectScript(options.selector))
           if (!rect) throw new Error(`No visible element matches selector: ${options.selector}`)
-          return { pngBase64: (await wc.capturePage(rect)).toPNG().toString("base64") }
+          return fitScreenshot((await wc.capturePage(rect)).toPNG())
         }
         if (options.fullPage) {
           await ensureDebugger(wc)
           const { cssContentSize } = (await wc.debugger.sendCommand("Page.getLayoutMetrics")) as {
             cssContentSize: { width: number; height: number }
           }
+          const { clip, note } = fullPageClip(cssContentSize)
           const { data } = (await wc.debugger.sendCommand("Page.captureScreenshot", {
             format: "png",
             captureBeyondViewport: true,
-            clip: {
-              x: 0,
-              y: 0,
-              width: Math.ceil(cssContentSize.width),
-              // ponytail: capped at 16k px, Chromium's texture limit; tile if taller pages matter.
-              height: Math.min(Math.ceil(cssContentSize.height), 16_384),
-              scale: 1
-            }
+            clip
           })) as { data: string }
-          return { pngBase64: data }
+          return fitScreenshot(Buffer.from(data, "base64"), note)
         }
-        return { pngBase64: (await wc.capturePage()).toPNG().toString("base64") }
+        return fitScreenshot((await wc.capturePage()).toPNG())
       }),
 
     controlHover: (sessionId, chatId, selector) =>
@@ -792,13 +877,11 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
     controlGoBack: (sessionId, chatId) =>
       withPage(sessionId, chatId, "goBack", async (wc) => {
         if (!wc.navigationHistory.canGoBack()) throw new Error("No previous page in history")
-        wc.navigationHistory.goBack()
+        await settleNavigation(wc, () => wc.navigationHistory.goBack())
       }),
 
     controlReload: (sessionId, chatId) =>
-      withPage(sessionId, chatId, "reload", async (wc) => {
-        wc.reload()
-      }),
+      withPage(sessionId, chatId, "reload", (wc) => settleNavigation(wc, () => wc.reload())),
 
     controlSnapshot: (sessionId, chatId) =>
       withPage(sessionId, chatId, "snapshot", async (wc) => ({

@@ -15,6 +15,8 @@ import type {
 export const MAX_NETWORK_ENTRIES = 500
 export const MAX_CONSOLE_ENTRIES = 1_000
 const MAX_BODY_CHARS = 100_000
+/** Per-entry cap on retained post data and console text, so the entry caps also bound memory. */
+export const MAX_ENTRY_CHARS = 10_000
 const DEFAULT_LIMIT = 100
 
 // The CDP fields we read. Chromium owns the shape; we only narrow what we use.
@@ -23,7 +25,14 @@ interface CdpResponse { status: number; statusText: string; headers: Record<stri
 interface RemoteObject { value?: unknown; description?: string; unserializableValue?: string }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
-type NetworkRecord = Mutable<BrowserNetworkEntry> & { cdpId: string; startedAt: number }
+// `hop` is this record's position in its requestId's redirect chain; ExtraInfo
+// events arrive per hop, in order, but before or after the hop's own event.
+type NetworkRecord = Mutable<BrowserNetworkEntry> & { cdpId: string; startedAt: number; hop: number }
+type Headers = Record<string, string>
+interface ExtraInfo { request: Array<Headers>; response: Array<Headers> }
+
+const clip = (text: string): string =>
+  text.length > MAX_ENTRY_CHARS ? `${text.slice(0, MAX_ENTRY_CHARS)}… (truncated, ${text.length} chars)` : text
 
 const levelOfConsoleType = (type: string): BrowserConsoleLevel =>
   type === "error" || type === "assert" ? "error"
@@ -56,14 +65,29 @@ const decodeBody = ({ body, base64Encoded }: { body: string; base64Encoded: bool
 export const createBrowserRecorder = (send: (method: string, params?: object) => Promise<unknown>) => {
   const requests = new Map<string, NetworkRecord>()
   let consoleEntries: Array<BrowserConsoleEntry> = []
+  // Wire headers (Cookie, Set-Cookie…) only arrive in the ExtraInfo events.
+  const extras = new Map<string, ExtraInfo>()
   let redirects = 0
+
+  const extraFor = (cdpId: string): ExtraInfo => {
+    let info = extras.get(cdpId)
+    if (!info) {
+      info = { request: [], response: [] }
+      extras.set(cdpId, info)
+      if (extras.size > MAX_NETWORK_ENTRIES * 2) extras.delete(extras.keys().next().value!)
+    }
+    return info
+  }
 
   const pushRequest = (record: NetworkRecord) => {
     requests.set(record.id, record)
-    if (requests.size > MAX_NETWORK_ENTRIES) requests.delete(requests.keys().next().value!)
+    if (requests.size <= MAX_NETWORK_ENTRIES) return
+    const oldest = requests.values().next().value!
+    requests.delete(oldest.id)
+    if (oldest.id === oldest.cdpId) extras.delete(oldest.cdpId)
   }
   const pushConsole = (entry: BrowserConsoleEntry) => {
-    consoleEntries.push(entry)
+    consoleEntries.push({ ...entry, text: clip(entry.text) })
     if (consoleEntries.length > MAX_CONSOLE_ENTRIES) consoleEntries = consoleEntries.slice(-MAX_CONSOLE_ENTRIES)
   }
   const finish = (record: NetworkRecord, timestamp: number) => {
@@ -93,6 +117,7 @@ export const createBrowserRecorder = (send: (method: string, params?: object) =>
     pushRequest({
       id,
       cdpId: id,
+      hop: prior && redirect ? prior.hop + 1 : 0,
       startedAt: timestamp,
       method: request.method,
       url: request.url,
@@ -105,7 +130,7 @@ export const createBrowserRecorder = (send: (method: string, params?: object) =>
       encodedBytes: null,
       requestHeaders: request.headers,
       responseHeaders: {},
-      postData: request.postData ?? null
+      postData: request.postData === undefined ? null : clip(request.postData)
     })
   }
 
@@ -116,6 +141,12 @@ export const createBrowserRecorder = (send: (method: string, params?: object) =>
 
   const handlers: Readonly<Record<string, (p: Params) => void>> = {
     "Network.requestWillBeSent": onRequest,
+    "Network.requestWillBeSentExtraInfo": (p) => {
+      extraFor(p.requestId as string).request.push(p.headers as Headers)
+    },
+    "Network.responseReceivedExtraInfo": (p) => {
+      extraFor(p.requestId as string).response.push(p.headers as Headers)
+    },
     "Network.responseReceived": withRecord((record, p) => {
       const response = p.response as CdpResponse
       record.status = response.status
@@ -169,7 +200,14 @@ export const createBrowserRecorder = (send: (method: string, params?: object) =>
     handlers[method]?.(params as Params)
   }
 
-  const publicEntry = ({ cdpId: _c, startedAt: _s, ...entry }: NetworkRecord): BrowserNetworkEntry => entry
+  const publicEntry = ({ cdpId, startedAt: _s, hop, ...entry }: NetworkRecord): BrowserNetworkEntry => {
+    const extra = extras.get(cdpId)
+    return {
+      ...entry,
+      requestHeaders: { ...entry.requestHeaders, ...extra?.request[hop] },
+      responseHeaders: { ...entry.responseHeaders, ...extra?.response[hop] }
+    }
+  }
 
   const networkRequests = (filter: BrowserNetworkFilter): ReadonlyArray<BrowserNetworkEntry> => {
     const matches = [...requests.values()].filter((r) =>
@@ -177,7 +215,10 @@ export const createBrowserRecorder = (send: (method: string, params?: object) =>
       (filter.resourceType === undefined || r.resourceType.toLowerCase() === filter.resourceType.toLowerCase()) &&
       (!filter.onlyFailed || r.failure !== null || (r.status ?? 0) >= 400)
     )
-    if (filter.clear) requests.clear()
+    if (filter.clear) {
+      requests.clear()
+      extras.clear()
+    }
     return takeLast(matches, filter.limit).map(publicEntry)
   }
 

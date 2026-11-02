@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { cdpKeyEvents } from "./browser-page-scripts.js"
-import { createBrowserRecorder, MAX_NETWORK_ENTRIES } from "./browser-recorder.js"
+import { createBrowserRecorder, MAX_ENTRY_CHARS, MAX_NETWORK_ENTRIES } from "./browser-recorder.js"
 
 const request = (requestId: string, url: string, timestamp = 1, extra: object = {}) => [
   "Network.requestWillBeSent",
@@ -68,6 +68,39 @@ describe("createBrowserRecorder network", () => {
     expect((await r.networkRequestDetail("1")).body).toBe('{"ok":true}')
     expect((await r.networkRequestDetail("2")).body).toBe("(binary image/png, 3 bytes)")
     await expect(r.networkRequestDetail("nope")).rejects.toThrow("No recorded request")
+  })
+})
+
+describe("createBrowserRecorder bounds and wire headers", () => {
+  it("truncates oversized post data and console text", () => {
+    const r = createBrowserRecorder(async () => ({}))
+    const huge = "x".repeat(MAX_ENTRY_CHARS * 5)
+    r.handle("Network.requestWillBeSent", {
+      requestId: "1", timestamp: 1, type: "Fetch",
+      request: { url: "http://x/post", method: "POST", headers: {}, postData: huge }
+    })
+    r.handle("Runtime.consoleAPICalled", { type: "log", timestamp: 1, args: [{ value: huge }] })
+    const post = r.networkRequests({})[0]?.postData ?? ""
+    const text = r.consoleLogs({})[0]?.text ?? ""
+    for (const value of [post, text]) {
+      expect(value.length).toBeLessThan(MAX_ENTRY_CHARS + 100)
+      expect(value).toContain(`truncated, ${huge.length} chars`)
+    }
+  })
+
+  it("merges ExtraInfo cookie headers per redirect hop, whichever arrives first", () => {
+    const r = createBrowserRecorder(async () => ({}))
+    // ExtraInfo for hop 0 arrives before its request; hop 1's after.
+    r.handle("Network.requestWillBeSentExtraInfo", { requestId: "1", headers: { Cookie: "sid=old" } })
+    r.handle(...request("1", "http://x/login"))
+    r.handle("Network.responseReceivedExtraInfo", { requestId: "1", headers: { "Set-Cookie": "sid=new" } })
+    r.handle(...request("1", "http://x/home", 2, {
+      redirectResponse: { status: 302, statusText: "Found", headers: {}, mimeType: "" }
+    }))
+    r.handle("Network.requestWillBeSentExtraInfo", { requestId: "1", headers: { Cookie: "sid=new" } })
+    const [hop0, hop1] = r.networkRequests({})
+    expect(hop0).toMatchObject({ requestHeaders: { Cookie: "sid=old" }, responseHeaders: { "Set-Cookie": "sid=new" } })
+    expect(hop1?.requestHeaders).toStrictEqual({ Cookie: "sid=new" })
   })
 })
 

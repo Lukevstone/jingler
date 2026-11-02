@@ -24,7 +24,7 @@ export const pointAtScript = (selector: string, kind: PointerKind): string => `n
   const el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return resolve(null);
   const kind = ${JSON.stringify(kind)};
-  el.scrollIntoView({ block: "center", inline: "center" });
+  el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const r = el.getBoundingClientRect();
   const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
   const mk = (css) => {
@@ -58,7 +58,9 @@ export const pointAtScript = (selector: string, kind: PointerKind): string => `n
       p.style.opacity = "0";
       setTimeout(() => p.remove(), 500);
     }
-    resolve({ x, y });
+    // Re-measure on arrival: layout can shift while the cursor glides.
+    const a = el.getBoundingClientRect();
+    resolve({ x: Math.round(a.left + a.width / 2), y: Math.round(a.top + a.height / 2) });
   }, 320);
 })`
 
@@ -72,7 +74,7 @@ export const hideOverlayScript = `new Promise((resolve) => {
 export const elementRectScript = (selector: string): string => `(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
-  el.scrollIntoView({ block: "center", inline: "center" });
+  el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const r = el.getBoundingClientRect();
   const x = Math.max(0, Math.floor(r.left)), y = Math.max(0, Math.floor(r.top));
   const width = Math.min(innerWidth, Math.ceil(r.right)) - x, height = Math.min(innerHeight, Math.ceil(r.bottom)) - y;
@@ -134,7 +136,9 @@ export const snapshotScript = String.raw`(() => {
     if (r.width === 0 || r.height === 0) continue;
     const st = getComputedStyle(el);
     if (st.visibility === "hidden" || st.display === "none") continue;
-    const label = (el.getAttribute("aria-label") || el.innerText || el.getAttribute("placeholder") || el.value || el.getAttribute("title") || el.getAttribute("alt") || "").trim().replace(/\s+/g, " ").slice(0, 80);
+    const buttonValue = el instanceof HTMLInputElement && /^(submit|button|reset)$/.test(el.type) ? el.value : "";
+    const labelText = el.labels && el.labels[0] ? el.labels[0].textContent : "";
+    const label = (el.getAttribute("aria-label") || labelText || el.innerText || el.getAttribute("placeholder") || buttonValue || el.getAttribute("title") || el.getAttribute("alt") || "").trim().replace(/\s+/g, " ").slice(0, 80);
     out.push({
       selector: byId(el) || byAttr(el, "data-testid") || byAttr(el, "name") || byAttr(el, "aria-label") || byAttr(el, "placeholder") || path(el),
       tag: el.tagName.toLowerCase(),

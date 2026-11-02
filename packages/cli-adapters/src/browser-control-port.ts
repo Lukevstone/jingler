@@ -74,7 +74,9 @@ export interface BrowserControlSessionPortShape {
   /** Open a URL (http/https) in the in-app browser and reveal the dock. */
   readonly navigate: (url: string) => Promise<void>
   /** PNG screenshot of the viewport, the full page, or one element, base64-encoded. */
-  readonly screenshot: (options?: BrowserScreenshotOptions) => Promise<{ readonly pngBase64: string }>
+  readonly screenshot: (
+    options?: BrowserScreenshotOptions
+  ) => Promise<{ readonly pngBase64: string; /** Set when the capture is incomplete. */ readonly note?: string }>
   /** Click the first element matching a CSS selector. */
   readonly click: (selector: string) => Promise<void>
   /** Type text into the first element matching a CSS selector. */

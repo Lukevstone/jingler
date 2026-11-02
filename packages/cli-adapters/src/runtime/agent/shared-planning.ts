@@ -13,7 +13,7 @@ import { Effect, Schema, Stream } from "effect"
 import { AtomicJsonFile } from "../persistence/atomic-json-file.js"
 import { codeReadModes, INTERACTIVE_TOOL_TIMEOUT_MS, ToolError, type ToolRegistry } from "../tools/tool-registry.js"
 import { AgentRuntimeError, type AgentRuntimeContext, type AgentRuntimeOwner, type AgentRuntimeShape } from "./agent-runtime.js"
-import { executeRegistryTool } from "./registry-tool-bridge.js"
+import { executeRegistryTool, registryResultText } from "./registry-tool-bridge.js"
 
 const State = Schema.Struct({
   cwd: Schema.String,
@@ -290,9 +290,9 @@ class PlanningSession {
       id: "workspace_edit", toolCallId: id, parameters: { path: this.state.path, oldText: content, newText: next },
       signal: binding.signal, allowed: true, onUpdate: undefined })
     await Effect.runPromise(binding.context.publishEvent({ _tag: "ToolEnd", id, status: result.details.status === "success" ? "success" : "error",
-      meta: null, diff: null, preview: result.details.preview, output: result.content.map(({ text }) => text).join("\n"),
+      meta: null, diff: null, preview: result.details.preview, output: registryResultText(result),
       ...(result.details.fileChanges ? { fileChanges: result.details.fileChanges } : {}) }))
-    if (result.details.status !== "success") throw new Error(`Could not save plan progress: ${result.content.map(({ text }) => text).join("\n")}`)
+    if (result.details.status !== "success") throw new Error(`Could not save plan progress: ${registryResultText(result)}`)
   }
 
   private async progress(text: string, turnEnded: boolean) {

@@ -73,18 +73,19 @@ export const buildBrowserControlMcp = (port: BrowserControlSessionPortShape) => 
     "screenshot",
     {
       description:
-        "Take a PNG screenshot of the in-app browser — the viewport by default, the whole scrollable page, or one element.",
+        "Take a PNG screenshot of the in-app browser — the viewport by default, the whole scrollable page, or one element. Full-page captures stop at 16384px tall and say so when they do.",
       inputSchema: {
         fullPage: z.boolean().optional().describe("Capture the entire scrollable page."),
         selector: z.string().optional().describe("Capture only the first element matching this CSS selector.")
       }
     },
     ({ fullPage, selector }) => guard(async () => {
-      const { pngBase64 } = await port.screenshot({
+      const { pngBase64, note } = await port.screenshot({
         ...(fullPage === undefined ? {} : { fullPage }),
         ...(selector === undefined ? {} : { selector })
       })
-      return { content: [{ type: "image", data: pngBase64, mimeType: "image/png" }] }
+      const image = { type: "image" as const, data: pngBase64, mimeType: "image/png" }
+      return { content: note === undefined ? [image] : [image, { type: "text", text: note }] }
     })
   )
 
