@@ -224,6 +224,10 @@ export interface ConversationViewProps {
   branchPending?: boolean
   /** Repository backing the session, shown at the composer's bottom-left. */
   repo?: string
+  /** Every checkout; two or more turn the composer repo label into a switcher. */
+  checkouts?: ReadonlyArray<import("@jingler/core").SessionCheckout>
+  activeCheckoutId?: string
+  onSwitchCheckout?: (checkoutId: string) => void
   /** Live uncommitted worktree state for the composer's dirty badge. */
   diff?: { files: number; added: number; removed: number } | null
   environments?: ReadonlyArray<import("@jingler/core").Environment>
@@ -391,7 +395,7 @@ const autoSwitchLink = (mode: ConversationViewProps["mode"], onSwitchToAuto: Con
  * it streams.
  */
 export function ConversationView(props:  ConversationViewProps) {
-  const { messages, hasMoreHistory, loadingHistory, onLoadEarlier, mode, subagentNeedsAttention, skills, files, paused, branch, branchPending, repo, diff, environments, environmentId, environmentPending, onSetEnvironment, providerCatalog, agentEndpointCatalog, endpointId, connectionId, providerId, modelId, onSetModel, onSend, onRetryPrompt, onStop, busy, tokens, contextBreakdown, contextTriggerAt, contextPhase, contextPreparing, contextDigestReady, contextStalled, contextHeld, contextHeldReason, onCompactNow, runStartedAt, queued, waitingIds, onUnqueue, onSendNow, onHandoffQueued, onHandoffAllQueued, onEditQueued, handoffHint, steeringId, onDecideGate, onSetMode, workMode, autoSwitch, onSetWorkMode, onSwitchToAuto, onAddMcp, mcpServers, onSetMcpApiKey, onSetMcpAuth, onAuthorizeMcp, reasoningEffort, thinkingEnabled, onSetReasoning, question, onAnswerQuestion, onOpenPlanReview, onForkOntoBranch, onAdoptBranch, planDocument, draft, onDraftChange, voiceInput, draftAttachments, onDraftAttachmentsChange, draftCodeReferences, onDraftCodeReferenceRemove, onDraftCodeReferencesClear, autoFocusComposer, focusKey, composerDisabledReason, followAgent, onToggleFollowAgent, archived, initialDraft } = defaultProps(props, {
+  const { messages, hasMoreHistory, loadingHistory, onLoadEarlier, mode, subagentNeedsAttention, skills, files, paused, branch, branchPending, repo, checkouts, activeCheckoutId, onSwitchCheckout, diff, environments, environmentId, environmentPending, onSetEnvironment, providerCatalog, agentEndpointCatalog, endpointId, connectionId, providerId, modelId, onSetModel, onSend, onRetryPrompt, onStop, busy, tokens, contextBreakdown, contextTriggerAt, contextPhase, contextPreparing, contextDigestReady, contextStalled, contextHeld, contextHeldReason, onCompactNow, runStartedAt, queued, waitingIds, onUnqueue, onSendNow, onHandoffQueued, onHandoffAllQueued, onEditQueued, handoffHint, steeringId, onDecideGate, onSetMode, workMode, autoSwitch, onSetWorkMode, onSwitchToAuto, onAddMcp, mcpServers, onSetMcpApiKey, onSetMcpAuth, onAuthorizeMcp, reasoningEffort, thinkingEnabled, onSetReasoning, question, onAnswerQuestion, onOpenPlanReview, onForkOntoBranch, onAdoptBranch, planDocument, draft, onDraftChange, voiceInput, draftAttachments, onDraftAttachmentsChange, draftCodeReferences, onDraftCodeReferenceRemove, onDraftCodeReferencesClear, autoFocusComposer, focusKey, composerDisabledReason, followAgent, onToggleFollowAgent, archived, initialDraft } = defaultProps(props, {
     hasMoreHistory: false,
     loadingHistory: false,
     skills: [],
@@ -567,6 +571,9 @@ function renderSessionAnalytics() {
                 branch={branch}
                 branchPending={branchPending}
                 repo={repo}
+                checkouts={checkouts}
+                activeCheckoutId={activeCheckoutId}
+                onSwitchCheckout={onSwitchCheckout}
                 diff={diff}
                 environments={environments}
                 environmentId={environmentId}

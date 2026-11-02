@@ -11,7 +11,6 @@ import {
   Cloud,
   Copy,
   GitMerge,
-  Monitor,
   Pencil,
   SquareTerminal,
   type LucideIcon,
@@ -83,6 +82,21 @@ const prLabelOf = (session: Session): string | null => {
   return prNumber === null ? null : `#${prNumber}`
 }
 
+/** What the row shows: the active row's issue and PR are header chips; online and the usual provider are the norm. */
+const rowVisibility = ({ session, active, environment, defaultProviderId, hasIssue, hasPr }: {
+  readonly session: Session
+  readonly active: boolean
+  readonly environment: Environment | undefined
+  readonly defaultProviderId: Session["providerId"]
+  readonly hasIssue: boolean
+  readonly hasPr: boolean
+}) => ({
+  showIssue: hasIssue && !active,
+  showPr: hasPr && !active && checkoutsOf(session).length < 2,
+  showEnvironment: environment !== undefined && environment.state !== "online",
+  showProvider: session.providerId !== defaultProviderId
+})
+
 /** A session row for the sidebar list. Active state gets the blue ring. */
 const repoLabelOf = (session: Session): string => {
   const checkout = activeCheckoutOf(session)
@@ -112,6 +126,7 @@ export function SessionRow({
   expanded,
   onToggleExpanded,
   missingRepoPaths,
+  defaultProviderId,
   className
 }: {
   session: Session
@@ -157,9 +172,12 @@ export function SessionRow({
   onToggleExpanded?: (id: string) => void
   /** Registered repo folders gone from disk, as `missingRepoKey`s; their chips render dashed red. */
   missingRepoPaths?: ReadonlySet<string>
+  /** The provider most sessions use; its icon is hidden as noise. */
+  defaultProviderId?: Session["providerId"]
   className?: string
 }) {
   const prLabel = prLabelOf(session)
+  const ariaCurrent = active ? "page" : undefined
          function renderActiveRow() {
            return (<motion.div
       layoutId={session.archived ? undefined : `session-${session.id}`}
@@ -172,6 +190,7 @@ export function SessionRow({
         tabIndex={0}
         onKeyDown={selectOnEnter}
         aria-busy={pendingAction !== null}
+        aria-current={ariaCurrent}
         className={cn(
           "group relative flex cursor-pointer flex-col gap-[7px] rounded-lg border px-2.5 py-2 transition-colors",
           active ? "border-blue/[0.32] bg-surface" : "border-transparent hover:bg-surface/40",
@@ -291,7 +310,7 @@ export function SessionRow({
 
     return (<div className="flex min-w-0 items-center gap-[7px] font-mono text-[10.5px] text-muted-foreground">
           {renderBranchLabel()}
-          {linkedIssue && (
+          {showIssue && linkedIssue && (
             <span
               className="shrink-0 whitespace-nowrap text-green"
               aria-label={`Linked issue ${linkedIssue.identifier}`}
@@ -300,7 +319,7 @@ export function SessionRow({
               {linkedIssue.identifier}
             </span>
           )}
-          {prLabel !== null && checkoutsOf(session).length < 2 && (
+          {showPr && (
             <span
               className="flex shrink-0 items-center gap-1 whitespace-nowrap"
               title={`Pull request ${prLabel}`}
@@ -313,9 +332,9 @@ export function SessionRow({
             </span>
           )}
           <div className="flex-1" />
-          {environment && (
+          {showEnvironment && environment && (
             <span data-testid={`session-environment-${session.id}`} className="max-w-[96px] shrink-0 truncate whitespace-nowrap text-dim" title={`${environment.name} · ${environment.state}`}>
-              {environment.name}{environment.state === "online" ? "" : ` · ${environment.state}`}
+              {environment.name} · {environment.state}
             </span>
           )}
           {(session.diff.added > 0 || session.diff.removed > 0) && (
@@ -325,19 +344,23 @@ export function SessionRow({
               className="shrink-0 whitespace-nowrap"
             />
           )}
-          <span
-            data-testid={`session-location-${session.id}`}
-            title={getTitle()}
-            className="flex size-4 flex-none items-center justify-center text-dim"
-          >
-            {executionLocation === "cloud" ? <Cloud size={12} /> : <Monitor size={12} />}
-          </span>
-          <span
-            title={providerLabel(session.providerId)}
-            className="flex size-4 flex-none items-center justify-center"
-          >
-            <ProviderIcon providerId={session.providerId ?? undefined} size={12} />
-          </span>
+          {executionLocation === "cloud" && (
+            <span
+              data-testid={`session-location-${session.id}`}
+              title={getTitle()}
+              className="flex size-4 flex-none items-center justify-center text-dim"
+            >
+              <Cloud size={12} />
+            </span>
+          )}
+          {showProvider && (
+            <span
+              title={providerLabel(session.providerId)}
+              className="flex size-4 flex-none items-center justify-center"
+            >
+              <ProviderIcon providerId={session.providerId ?? undefined} size={12} />
+            </span>
+          )}
         </div>)
   }
 
@@ -514,6 +537,7 @@ export function SessionRow({
       ? compactAge(activeStartedAt, now)
       : null
   const executionLocation = session.environmentId ? "cloud" : (session.executionLocation ?? "local")
+  const { showIssue, showPr, showEnvironment, showProvider } = rowVisibility({ session, active, environment, defaultProviderId, hasIssue: linkedIssue !== undefined, hasPr: prLabel !== null })
   return withMenu(
     // The motion element is a WRAPPER rather than the row itself because
     // `motion.div` claims `onDragStart` for its own pan gesture, whose signature

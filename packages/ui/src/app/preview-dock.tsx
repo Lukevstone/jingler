@@ -230,7 +230,7 @@ function DockSideButton({
       variant="ghost"
       size="icon"
       onClick={onClick}
-      aria-label={`Dock ${side}`}
+      aria-label={`Dock ${side}`} title={`Dock ${side}`}
       aria-pressed={active}
       className={cn("size-6", active && "text-blue")}
     >

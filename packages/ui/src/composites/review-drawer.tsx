@@ -77,7 +77,7 @@ export function ReviewDrawer({ pr, drawer, onPromote }: { pr: PullRequest; drawe
         >
           Promote to session
         </Button>
-        <Button variant="ghost" size="icon" className="size-7" aria-label="Close review drawer" onClick={() => send({ type: "CLOSE" })}>
+        <Button variant="ghost" size="icon" className="size-7" aria-label="Close review drawer" title="Close review drawer" onClick={() => send({ type: "CLOSE" })}>
           <X size={14} aria-hidden />
         </Button>
       </div>

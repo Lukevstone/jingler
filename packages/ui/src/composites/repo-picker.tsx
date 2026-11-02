@@ -121,7 +121,7 @@ function StarToggle({ starred, onToggle }: { starred: boolean; onToggle: () => v
       variant="ghost"
       size="icon"
       type="button"
-      aria-label={starred ? "Unstar repo" : "Star repo"}
+      aria-label={starred ? "Unstar repo" : "Star repo"} title={starred ? "Unstar repo" : "Star repo"}
       aria-pressed={starred}
       onPointerDown={swallow}
       onPointerUp={swallow}

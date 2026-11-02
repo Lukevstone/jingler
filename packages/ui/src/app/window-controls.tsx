@@ -22,13 +22,13 @@ export function WindowControls({
   const base = "h-full w-[46px] rounded-none"
   return (
     <div data-testid="window-controls" style={noDrag} className="-mr-3.5 flex h-full flex-none items-stretch">
-      <Button variant="ghost" size="icon" aria-label="Minimize" onClick={onMinimize} className={base}>
+      <Button variant="ghost" size="icon" aria-label="Minimize" title="Minimize" onClick={onMinimize} className={base}>
         <Minus size={14} />
       </Button>
       <Button
         variant="ghost"
         size="icon"
-        aria-label={maximized ? "Restore" : "Maximize"}
+        aria-label={maximized ? "Restore" : "Maximize"} title={maximized ? "Restore" : "Maximize"}
         onClick={onToggleMaximize}
         className={base}
       >
@@ -37,7 +37,7 @@ export function WindowControls({
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Close"
+        aria-label="Close" title="Close"
         onClick={onClose}
         className={`${base} hover:bg-state-failed hover:text-primary-fg`}
       >

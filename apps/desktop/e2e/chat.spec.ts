@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { appShell, confirmArchive, expect, sessionRow, showSessions, test, openModelSettings } from "./fixtures.js"
+import { activeSessionRow, appShell, confirmArchive, expect, sessionRow, showSessions, test, openModelSettings } from "./fixtures.js"
 import { explorerTree } from "./explorer.js"
 import { showPullRequestDetails } from "./pull-request.js"
 import type { Page } from "@playwright/test"
@@ -475,7 +475,7 @@ test("renaming a session keeps the open tab and the breadcrumb follows it", asyn
   const input = row.getByRole("textbox")
   await input.fill("Renamed from sidebar")
   await input.press("Enter")
-  await expect(window.getByTestId("session-header-identity")).toContainText("Renamed from sidebar")
+  await expect(activeSessionRow(window)).toContainText("Renamed from sidebar")
   await expect(fileTab.getByRole("tab")).toHaveAttribute("aria-selected", "true")
 
   // Tabs live in the editor group, not the window title bar.

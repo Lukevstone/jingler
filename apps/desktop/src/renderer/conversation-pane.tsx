@@ -26,6 +26,7 @@ import type { ToastInput } from "@jingler/ui"
 import {
   activeCheckoutOf,
   agentFileActivityOf,
+  checkoutsOf,
   clampFontScale,
   countNodesAwaitingAttention,
   piEndpointId,
@@ -1516,6 +1517,9 @@ function renderMainConversation({
     branch={checkout.branch}
     branchPending={session.semanticBranchPending === true}
     repo={checkout.repo}
+    checkouts={checkoutsOf(session)}
+    activeCheckoutId={checkout.id}
+    onSwitchCheckout={(checkoutId) => void rpc.sessionsSwitchCheckout(session.id, checkoutId).then(publishSessionUpdate)}
     diff={liveDiffs[session.id] ?? null}
     environments={environments}
     environmentId={session.environmentId}

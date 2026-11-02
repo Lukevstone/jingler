@@ -340,7 +340,7 @@ function ChangesReviewFlow(setup: FlowSetup) {
   const flow = useFlowState(setup)
   return (
     <div className="h-screen" style={setup.width ? { width: setup.width } : undefined}>
-      <AppShell title="Changes review flow">
+      <AppShell>
         <SessionConversation
           projects={[project]}
           sessions={[flow.session]}

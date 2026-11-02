@@ -6,12 +6,10 @@ const noDrag = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 /** Window chrome plus the focused session's global tab row. */
 export function TitleBar({
-  title = "Jingler",
   actions,
   platform,
   windowControls
 }: {
-  title?: string
   actions?: ReactNode
   /** `process.platform`. Window controls draw only when this is set and is not `darwin`. */
   platform?: string
@@ -21,7 +19,6 @@ export function TitleBar({
   return (
     <div
       data-testid="title-bar"
-      title={title}
       style={drag}
       className="window-drag-region flex h-11 flex-none items-center gap-2 border-b border-hairline bg-panel px-3.5"
     >

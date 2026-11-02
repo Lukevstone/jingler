@@ -170,7 +170,6 @@ import { useEnvironments } from "./use-environments.js";
 import { createOffloadSettingsMachine } from "./offload-settings-machine.js";
 import { useProjects } from "./use-projects.js";
 import { useImportSessions } from "./use-import-sessions.js";
-import { CheckoutHeader } from "./checkout-header.js";
 import { WorkspaceWorkflowBar } from "./workspace-workflow-bar.js";
 import { useAutoUpdate } from "./use-auto-update.js";
 import { useReleaseNotes } from "./use-release-notes.js";
@@ -2017,7 +2016,6 @@ function AuthedApp({
         )}
         renderConversation={(session: Session, view, ctx) => (
           <div className="flex min-h-0 flex-1 flex-col">
-            <CheckoutHeader session={session} />
             <WorkspaceWorkflowBar
               session={session}
               project={projectController.projects.find((project) => project.id === activeCheckoutOf(session).projectId)}

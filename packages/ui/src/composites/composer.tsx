@@ -19,6 +19,7 @@ import type {
   ProviderModelId,
   ReasoningEffort,
   ReasoningSetting,
+  SessionCheckout,
   Skill,
 } from "@jingler/core";
 import {
@@ -61,6 +62,7 @@ import { MentionMenu } from "./mention-menu.js";
 import { McpApiKeyDialog, McpAuthSetupDialog, McpBrand, McpServerDialog } from "./mcp-settings.js";
 import { planTaskCounts, PlanTaskList, type PlanStageActionHandler } from "./plan-progress-dock.js";
 import { PromptInputSurface } from "./beui/work.js";
+import { CheckoutSwitcher } from "./checkout-switcher.js";
 import {
   ProviderModelBrowser,
   type ProviderModelSelection,
@@ -341,6 +343,10 @@ type ComposerProps =  {
   branchPending?: boolean;
   /** Repository name backing this session — shown at the composer's bottom-left. */
   repo?: string;
+  /** Every checkout of a multi-repo session; with two or more the repo label becomes a switcher. */
+  checkouts?: ReadonlyArray<SessionCheckout>;
+  activeCheckoutId?: string;
+  onSwitchCheckout?: (checkoutId: string) => void;
   /**
    * Live uncommitted worktree state — changed files plus ±line totals vs HEAD.
    * Rendered as a quiet badge beside the repo name; null/absent or all-zero
@@ -753,13 +759,17 @@ export function Composer(props: ComposerProps) {
 
   function renderRepositoryMetadata() {
     return (<span className="flex min-w-0 items-center gap-2">
-                <span
-                  title={`Repository: ${repo}`}
-                  className="flex min-w-0 items-center gap-1"
-                >
-                  <FolderGit2 size={12} className="flex-none" />
-                  <span className="truncate">{repo}</span>
-                </span>
+                {checkouts && checkouts.length > 1 ? (
+                  <CheckoutSwitcher checkouts={checkouts} activeCheckoutId={activeCheckoutId ?? ""} onSwitch={onSwitchCheckout} />
+                ) : (
+                  <span
+                    title={`Repository: ${repo}`}
+                    className="flex min-w-0 items-center gap-1"
+                  >
+                    <FolderGit2 size={12} className="flex-none" />
+                    <span className="truncate">{repo}</span>
+                  </span>
+                )}
                 {/* Dirty-tree badge: a clean tree says nothing. */}
                 {diff !== null && (diff.files > 0 || diff.added > 0 || diff.removed > 0) && (
                   <span
@@ -824,7 +834,7 @@ export function Composer(props: ComposerProps) {
             </MorphPopover>)
   }
 
-  const { voiceInput, submitting, preserveDraftOnSend, skills, files, onAddMcp, mcpServers, onSetMcpApiKey, onSetMcpAuth, onAuthorizeMcp, onSend, onStop, branch, branchPending, repo, diff, environments, environmentId, environmentPending, onSetEnvironment, providerCatalog, agentEndpointCatalog, endpointId, connectionId, providerId, modelId, onSetModel, mode, onSetMode, followAgent, onToggleFollowAgent, reasoningEffort, thinkingEnabled, onSetReasoning, workMode, autoSwitch, onSetWorkMode, paused, disabledReason, busy, placeholder, inputLabel, autoFocus, focusKey, initialValue, value: controlledValue, onValueChange, attachments: controlledAttachments, onAttachmentsChange, codeReferences, onCodeReferenceRemove, onCodeReferencesClear, planDocument, onOpenPlanStage, onPlanStageAction, contextControls, contextMeter, className } = defaultProps(props, {
+  const { voiceInput, submitting, preserveDraftOnSend, skills, files, onAddMcp, mcpServers, onSetMcpApiKey, onSetMcpAuth, onAuthorizeMcp, onSend, onStop, branch, branchPending, repo, checkouts, activeCheckoutId, onSwitchCheckout, diff, environments, environmentId, environmentPending, onSetEnvironment, providerCatalog, agentEndpointCatalog, endpointId, connectionId, providerId, modelId, onSetModel, mode, onSetMode, followAgent, onToggleFollowAgent, reasoningEffort, thinkingEnabled, onSetReasoning, workMode, autoSwitch, onSetWorkMode, paused, disabledReason, busy, placeholder, inputLabel, autoFocus, focusKey, initialValue, value: controlledValue, onValueChange, attachments: controlledAttachments, onAttachmentsChange, codeReferences, onCodeReferenceRemove, onCodeReferencesClear, planDocument, onOpenPlanStage, onPlanStageAction, contextControls, contextMeter, className } = defaultProps(props, {
     skills: [],
     files: [],
     mcpServers: [],

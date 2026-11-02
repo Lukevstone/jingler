@@ -237,6 +237,17 @@ const updateAccessibleLabel = (update: SidebarUpdate): string => {
   }
 }
 
+/** The provider most sessions use, so rows only badge the odd one out. */
+export const mostUsedProvider = (sessions: ReadonlyArray<Session>): Session["providerId"] => {
+  const counts = new Map<Session["providerId"], number>()
+  for (const s of sessions) counts.set(s.providerId, (counts.get(s.providerId) ?? 0) + 1)
+  const [first, second] = [...counts].sort((a, b) => b[1] - a[1])
+  // A tie has no default — hiding one of them would be arbitrary.
+  return first && (!second || first[1] > second[1]) ? first[0] : undefined
+}
+
+const starLabel = (starred: boolean | undefined): string => (starred ? "Unstar repository" : "Star repository")
+
 const agentsRunningTitle = (agents: number): string =>
   agents === 1 ? "1 agent is running. Restarting stops it." : `${agents} agents are running. Restarting stops them.`
 
@@ -301,7 +312,7 @@ function UpdateButton({ update, compact = false }: { update: SidebarUpdate; comp
               variant="ghost"
               size="icon"
               className="size-6"
-              aria-label={`Dismiss Jingler ${update.version} update`}
+              aria-label={`Dismiss Jingler ${update.version} update`} title={`Dismiss Jingler ${update.version} update`}
               onClick={update.onDismiss}
             >
               <X size={14} />
@@ -371,7 +382,7 @@ function ReleaseNotesCard({ releaseNotes }: { releaseNotes: SidebarReleaseNotes 
         </ul>
       ) : null}
       <Button variant="ghost" size="icon"
-        aria-label={`Dismiss Jingler ${version} release notes`}
+        aria-label={`Dismiss Jingler ${version} release notes`} title={`Dismiss Jingler ${version} release notes`}
         onClick={onDismiss}
         className="absolute right-2 top-2 size-7 text-dim"
       >
@@ -489,6 +500,7 @@ function SidebarBody({
   /** Collapse to the icon rail (the header's `PanelLeft` button). */
   onCollapse?: () => void
 }) {
+  const defaultProviderId = mostUsedProvider(sessions)
   function renderSessionList() {
     return (<div className="flex flex-1 flex-col overflow-auto px-2 pb-2 pt-0.5">
         {sessions.length === 0 ? (
@@ -632,7 +644,7 @@ return (renderExpandedGroupHeading())
                     variant="ghost"
                     size="icon"
                     type="button"
-                    aria-label={starredRepoNames?.has(key) ? "Unstar repository" : "Star repository"}
+                    aria-label={starLabel(starredRepoNames?.has(key))} title={starLabel(starredRepoNames?.has(key))}
                     aria-pressed={starredRepoNames?.has(key) ?? false}
                     onClick={() => onToggleStar(key)}
                     className={cn(
@@ -789,6 +801,7 @@ return (renderExpandedGroupHeading())
         expanded={open}
         onToggleExpanded={s.id === activeSessionId ? undefined : toggleExpanded}
         missingRepoPaths={missingRepoPaths}
+        defaultProviderId={defaultProviderId}
       />
       {open && (
         <SessionTree
@@ -848,11 +861,8 @@ return (renderExpandedGroupHeading())
           platform. `text-brand` for the same reason it was branded up there —
           it is the one spot of colour in a monochrome column.
         */}
-        {onWorkspaceViewChange ? (
-          <span className="text-[13px] font-semibold text-text-bright">Workspace</span>
-        ) : (
-          <JinglerMark className="h-[14px] w-auto flex-none text-brand" />
-        )}
+        <JinglerMark className="h-[14px] w-auto flex-none text-brand" />
+
         {/* The rail's expand button lives in the same corner, so the control
             that changes this state is in one place rather than two. */}
         {onCollapse && (

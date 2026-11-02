@@ -1,4 +1,4 @@
-import { appShell, expect, test } from "./fixtures.js"
+import { activeSessionRow, appShell, expect, test } from "./fixtures.js"
 
 test("every workspace row stays visible and selectable while another is running", async ({ launchApp }) => {
   const { window } = await launchApp({
@@ -25,7 +25,7 @@ test("every workspace row stays visible and selectable while another is running"
   })
   await expect(appShell(window)).toBeVisible()
   await window.setViewportSize({ width: 1500, height: 860 })
-  const identity = (title: string) => window.getByTestId("session-header-identity").getByText(title, { exact: true })
+  const identity = (title: string) => activeSessionRow(window).getByText(title, { exact: true })
   for (const id of ["worker", "quiet", "quiet-two"]) await expect(window.getByTestId(`session-row-${id}`)).toBeVisible()
   await window.getByTestId("session-row-worker").click()
   await expect(identity("worker")).toBeVisible()
