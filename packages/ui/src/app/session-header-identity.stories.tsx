@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { CircleDot, GitPullRequest } from "lucide-react"
+import { CircleDot } from "lucide-react"
 import { fn } from "storybook/test"
 import { SessionHeaderIdentity } from "./session-header-identity.js"
 
@@ -12,17 +12,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Board 04b header (301-0): title, filled branch chip, outlined PR and issue chips. */
+/** Outlined issue chip; the title and branch live in the sidebar and chat tab. */
 export const Default: Story = {
   args: {
-    title: "Fix PR inbox pagination",
-    branch: "morgan/pr-inbox-pagination",
-    chips: [
-      { id: "pr", label: "PR #482", title: "Open pull request", icon: GitPullRequest, onOpen: fn() },
-      { id: "issue", label: "LIN-482", title: "Open LIN-482", icon: CircleDot, onOpen: fn() }
-    ]
+    chips: [{ id: "issue", label: "LIN-482", title: "Open LIN-482", icon: CircleDot, onOpen: fn() }]
   }
 }
 
-/** Missing branch / PR / issue render nothing. */
-export const TitleOnly: Story = { args: { title: "Fix PR inbox pagination", chips: [] } }
+/** No linked issue renders nothing. */
+export const Empty: Story = { args: { chips: [] } }

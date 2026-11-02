@@ -1606,7 +1606,7 @@ const { sessions, user, update, releaseNotes, whatsNew, onSignOut, onSignIn, rep
   return (
     // No layout picker in the title bar any more: the shape of the split is a
     // consequence of what you dragged where, not a mode you pick up front.
-    <AppShell title="Jingler" platform={props.platform} windowControls={props.windowControls} banner={props.banner}>
+    <AppShell platform={props.platform} windowControls={props.windowControls} banner={props.banner}>
       {renderSessionWorkspace()}
       {renderAddProjectDialog()}
       {onLoadUsage && (

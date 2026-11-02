@@ -607,7 +607,7 @@ function McpServerRow({
           <Button
             variant="ghost"
             size="icon"
-            aria-label={`Remove ${server.name}`}
+            aria-label={`Remove ${server.name}`} title={`Remove ${server.name}`}
             onClick={() => run(() => remove(server.name))}
           >
             <Trash2 size={14} />

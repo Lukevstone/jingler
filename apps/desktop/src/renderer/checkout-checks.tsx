@@ -3,6 +3,7 @@ import { useQueries } from "@tanstack/react-query"
 import { checkoutsOf, type Session } from "@jingler/core"
 import { PrCheckRow, checkoutLabel } from "@jingler/ui"
 import { rpc } from "./rpc-client.js"
+import { githubPollInterval, retryUnlessRateLimited } from "./github-poll.js"
 
 const CHECKOUT_CHECKS_MS = 10_000
 
@@ -14,7 +15,8 @@ export function CheckoutChecks({ session }: { readonly session: Session }) {
       queryKey: ["github", "pr-checkout", session.id, checkout.id, checkout.prNumber] as const,
       queryFn: () => rpc.githubPr(session.id, undefined, checkout.id),
       enabled: checkouts.length > 1,
-      refetchInterval: CHECKOUT_CHECKS_MS
+      refetchInterval: githubPollInterval(CHECKOUT_CHECKS_MS),
+      retry: retryUnlessRateLimited
     }))
   })
   if (checkouts.length < 2) return null

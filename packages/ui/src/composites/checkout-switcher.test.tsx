@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { SessionCheckout } from "@jingler/core"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { CheckoutSwitcher, checkoutLabel } from "./checkout-switcher.js"
 
 afterEach(cleanup)
@@ -9,22 +9,22 @@ const api: SessionCheckout = { id: "primary", repo: "org/api", branch: "feat/x",
 const web: SessionCheckout = { id: "c2", repo: "org/web", branch: "feat/y", prNumber: null }
 
 describe("CheckoutSwitcher", () => {
-  it("renders nothing for a legacy single-checkout session", () => {
-    render(<CheckoutSwitcher checkouts={[api]} activeCheckoutId="primary" />)
+  it("renders nothing for a single-checkout session", () => {
+    render(<CheckoutSwitcher checkouts={[api]} activeCheckoutId="primary" onSwitch={vi.fn()} />)
     expect(screen.queryByTestId("checkout-switcher")).toBeNull()
   })
 
-  it("shows the active repo · branch and a PR chip only for checkouts with a PR", () => {
-    render(<CheckoutSwitcher checkouts={[api, web]} activeCheckoutId="c2" prStates={{ primary: { state: "open", checks: "pass" } }} />)
-    expect(screen.getByText("web · feat/y")).toBeDefined()
-    expect(screen.getByTestId("checkout-pr-primary").textContent).toContain("#12")
-    expect(screen.queryByTestId("checkout-pr-c2")).toBeNull()
+  it("names the active repo and how many others are attached", () => {
+    render(<CheckoutSwitcher checkouts={[api, web]} activeCheckoutId="c2" onSwitch={vi.fn()} />)
+    expect(screen.getByTestId("checkout-switcher").textContent).toBe("web+1")
   })
 
-  it("names every attached repo in the strip, PR or not", () => {
-    render(<CheckoutSwitcher checkouts={[api, web]} activeCheckoutId="primary" />)
-    expect(screen.getByTestId("checkout-chip-primary").textContent).toContain("api")
-    expect(screen.getByTestId("checkout-chip-c2").textContent).toBe("web")
+  it("switches to the picked checkout", async () => {
+    const onSwitch = vi.fn()
+    render(<CheckoutSwitcher checkouts={[api, web]} activeCheckoutId="c2" onSwitch={onSwitch} />)
+    fireEvent.click(screen.getByRole("button", { name: "Switch repository" }))
+    fireEvent.click(await screen.findByText("api · feat/x"))
+    expect(onSwitch).toHaveBeenCalledWith("primary")
   })
 
   it("labels a checkout by its repo name and branch", () => {

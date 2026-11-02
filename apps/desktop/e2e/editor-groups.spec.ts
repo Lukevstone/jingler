@@ -372,18 +372,10 @@ test("legacy split shortcuts cannot create duplicate panes", async ({ launchApp 
 test("session chrome: header chips, no chat breadcrumb, New chat button", async ({ launchApp }) => {
   const { window } = await launchApp({ configured: true, isolateSystemHome: true, withRepo: true, sessions })
   await window.locator("[data-testid^='session-row-']").filter({ hasText: "Alpha session" }).first().click()
-  await expect(window.getByTestId("session-header-identity")).toBeVisible()
-  await expect(window.getByTestId("header-branch")).toBeVisible()
-  // The branch chip is one 24px row, vertically centred on the session title.
-  const chipBox = (await window.getByTestId("header-branch").boundingBox())!
-  const titleBox = (await window.getByTestId("session-header-identity").locator("span").first().boundingBox())!
-  expect(chipBox.height).toBeLessThanOrEqual(24)
-  expect(Math.abs(chipBox.y + chipBox.height / 2 - (titleBox.y + titleBox.height / 2))).toBeLessThanOrEqual(1)
+  // The header no longer repeats the session title or branch — the sidebar row shows both.
+  await expect(window.getByTestId("header-branch")).toHaveCount(0)
   await expect(window.getByRole("navigation", { name: "Breadcrumb" })).toHaveCount(0)
-  // macOS traffic lights end around x=78: the title must start clear of them,
-  // and the right-hand header views must stay inside the window.
-  const identityBox = await window.getByTestId("session-header-identity").boundingBox()
-  expect(identityBox?.x ?? 0).toBeGreaterThanOrEqual(78)
+  // The right-hand header views must stay inside the window.
   const barBox = await window.getByTestId("title-bar").boundingBox()
   const viewsBox = await window.locator("#session-header-views-portal").boundingBox()
   expect((viewsBox?.x ?? 0) + (viewsBox?.width ?? 0)).toBeLessThanOrEqual((barBox?.x ?? 0) + (barBox?.width ?? 0))

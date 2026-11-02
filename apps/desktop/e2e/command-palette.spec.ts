@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { appShell, confirmArchive, expect, sessionRow, test } from "./fixtures.js"
+import { activeSessionRow, appShell, confirmArchive, expect, sessionRow, test } from "./fixtures.js"
 import type { SeedSession } from "./fixtures.js"
 
 /**
@@ -53,7 +53,7 @@ test("⌘K opens the palette and jumps to a session", async ({ launchApp }) => {
   await expect(appShell(window)).toBeVisible()
   // The newest session is the one on screen at rest, so jumping to the other is
   // an observable change rather than a coincidence.
-  await expect(window.getByTestId("session-header-identity")).toContainText("Alpha session")
+  await expect(activeSessionRow(window)).toContainText("Alpha session")
 
   await window.keyboard.press("Meta+k")
   await expect(window.getByTestId("command-palette")).toBeVisible()
@@ -67,7 +67,7 @@ test("⌘K opens the palette and jumps to a session", async ({ launchApp }) => {
   await window.keyboard.press("Enter")
 
   await expect(window.getByTestId("command-palette")).toBeHidden()
-  await expect(window.getByTestId("session-header-identity")).toContainText("Beta session")
+  await expect(activeSessionRow(window)).toContainText("Beta session")
 })
 
 test("⌘K reopens the palette, and Escape closes it", async ({ launchApp }) => {
@@ -288,7 +288,7 @@ test("a 'Go to <Tab>' does not follow you to the next session", async ({ launchA
     ]
   })
 
-  await expect(window.getByTestId("session-header-identity")).toContainText("Alpha session")
+  await expect(activeSessionRow(window)).toContainText("Alpha session")
 
   // A worktree session surfaces the Terminal tab — see `builtinTabContributions`.
   await window.keyboard.press("Meta+k")
@@ -307,7 +307,7 @@ test("a 'Go to <Tab>' does not follow you to the next session", async ({ launchA
   await window.getByPlaceholder(PLACEHOLDER).fill("Beta")
   await window.keyboard.press("Enter")
 
-  await expect(window.getByTestId("session-header-identity")).toContainText("Beta session")
+  await expect(activeSessionRow(window)).toContainText("Beta session")
   await expect(shellTab).toHaveCount(0)
 })
 
@@ -385,7 +385,7 @@ test("the 'Needs you' palette group jumps to a session blocked on a question", a
 
   // Session A is active again, question still visible.
   await expect(window.getByTestId("command-palette")).toBeHidden()
-  await expect(window.getByTestId("session-header-identity")).toContainText(
+  await expect(activeSessionRow(window)).toContainText(
     "Session A"
   )
   await expect(window.getByText("Agent needs your input")).toBeVisible()
@@ -418,7 +418,7 @@ test("⌘J switches to the session that needs you", async ({ launchApp }) => {
 
   await window.keyboard.press("Meta+j")
 
-  await expect(window.getByTestId("session-header-identity")).toContainText(
+  await expect(activeSessionRow(window)).toContainText(
     "Session A"
   )
   await expect(window.getByText("Agent needs your input")).toBeVisible()

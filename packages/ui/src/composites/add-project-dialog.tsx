@@ -297,7 +297,7 @@ const titleFor = (directory: boolean, github: boolean, cloneReady: boolean, form
 export function AddProjectDialog(props: AddProjectDialogProps) {
          function renderDialogHeader() {
            return (<DialogHeader>
-          {(directory || github) && <Button variant="ghost" size="icon" aria-label="Back" onClick={() => send({ type: "BACK" })}><ArrowLeft size={15} /></Button>}
+          {(directory || github) && <Button variant="ghost" size="icon" aria-label="Back" title="Back" onClick={() => send({ type: "BACK" })}><ArrowLeft size={15} /></Button>}
           <DialogTitle>{titleFor(directory, github, cloneReady, form, method)}</DialogTitle>
           {directoryListing && directory && <span className="max-w-[55%] truncate text-[11px] font-normal text-muted-foreground">{directoryListing.path}</span>}
         </DialogHeader>)

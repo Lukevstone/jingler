@@ -1124,11 +1124,7 @@ function SessionPaneBody(props: SessionPaneProps) {
       </div>
     ) : null
   const headerIdentity = (
-    <SessionHeaderIdentity
-      title={active.title || UNTITLED_SESSION}
-      branch={activeCheckoutOf(active).branch}
-      chips={linkChips.filter((chip) => chip.id !== "pr")}
-    />
+    <SessionHeaderIdentity chips={linkChips.filter((chip) => chip.id !== "pr")} />
   )
 
   const renderGroups = (groupLayout: EditorLayout) => (

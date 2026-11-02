@@ -103,7 +103,7 @@ test("agent switches to a second registered repo mid-turn; Changes groups both; 
   // The write landed in repo B's worktree, never repo A's.
   expect(existsSync(join(first!.worktreePath!, "src", "other-repo.ts"))).toBe(false)
 
-  // Header switcher and the sidebar repo count.
+  // Composer repo switcher and the sidebar repo count.
   await expect(window.getByTestId("checkout-switcher")).toBeVisible()
   await expect(window.getByTestId(`session-repos-${(session as unknown as { id: string }).id}`)).toContainText(" + ")
 
@@ -139,7 +139,9 @@ test("group header and checkout chip show the checkout's live branch after the a
   await allowGates(window, async () => (sessionsAt(home)[0]?.checkouts ?? []).some((c) => (c as { branch?: string }).branch === "feat/live-label"))
 
   const moved = sessionsAt(home)[0]!.checkouts!.find((c) => (c as { branch?: string }).branch === "feat/live-label")!
-  await expect(window.getByTestId("checkout-switcher")).toContainText("feat/live-label")
+  await window.getByRole("button", { name: "Switch repository" }).click()
+  await expect(window.getByText(/· feat\/live-label/).first()).toBeVisible()
+  await window.keyboard.press("Escape")
   await window.getByRole("button", { name: /^Changes\b/ }).first().click()
   await expect(window.getByTestId(`changes-checkout-${moved.id}`)).toContainText("feat/live-label", { timeout: 20_000 })
 })

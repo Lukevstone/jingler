@@ -41,8 +41,10 @@ import {
   unifiedDiffFromApiFiles
 } from "./github-mappers.js"
 import { runGit, runString } from "./command.js"
+import { makeRateGate, type RateGate } from "./github-rate-gate.js"
 
 const ISSUE_INBOX_CONCURRENCY = 4
+const ETAG_CACHE_LIMIT = 500
 
 /** Run `read` over `items` with at most `limit` in flight, settling each independently. */
 const settleBounded = async <T, R>(
@@ -219,6 +221,8 @@ export interface GitHubApiClientOptions {
   readonly fetch?: typeof fetch
   /** Defaults to GitHub.com; overridden only by hermetic HTTP integration tests. */
   readonly apiBaseUrl?: string
+  /** Injected by tests; defaults to a per-client gate. */
+  readonly rateGate?: RateGate
 }
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -404,6 +408,8 @@ export const makeGitHubApiClient = (options: GitHubApiClientOptions): GitHubApiC
   const repositoryCache = new Map<string, { readonly remote: string; readonly repository: GitHubRepository }>()
   const slugRepositoryCache = new Map<string, GitHubRepository>()
   let latestRateLimit: GitHubRateLimit | null = null
+  const gate = options.rateGate ?? makeRateGate()
+  const etagCache = new Map<string, { readonly etag: string; readonly data: unknown }>()
 
   const call = async <A>(
     grant: GitHubInstallationCredential,
@@ -421,15 +427,56 @@ export const makeGitHubApiClient = (options: GitHubApiClientOptions): GitHubApiC
       },
       request: { fetch: options.fetch ?? fetch }
     })
+    const gateKey = grant.installationId
+    gate.check(gateKey)
+    const read = method === "GET"
+    const { cacheKey, cached, conditional } = revalidation(read, gateKey, url, parameters)
     try {
-      const response = await request<A>({ method, url, ...parameters })
-      latestRateLimit = mapRateLimit(headersRecord(response.headers))
-      return { data: response.data, rateLimit: latestRateLimit }
+      // GraphQL reads are POSTs too; only REST writes get the 1s spacing.
+      const response = await gate.run(!read && url !== "/graphql", () => request<A>({ method, url, ...conditional }))
+      const headers = observe(gateKey, headersRecord(response.headers))
+      if (cacheKey !== null && headers.etag) remember(cacheKey, headers.etag, response.data)
+      return { data: response.data, rateLimit: latestRateLimit! }
     } catch (error) {
-      const mapped = githubError(error, repository, grant.installationId)
-      if (mapped.reason === "token-expired") options.auth.invalidate(grant.installationId)
-      throw mapped
+      if (cached && number(record(error).status) === 304) {
+        // A 304 on an authorized request does not count against the primary limit.
+        observe(gateKey, headersRecord(record(record(error).response).headers as ResponseHeaders))
+        return { data: cached.data as A, rateLimit: latestRateLimit! }
+      }
+      throw failed(error, gateKey, repository)
     }
+  }
+
+  /** Record the rate-limit headers; a response with nothing left cools the key down until reset. */
+  const observe = (gateKey: string, headers: Readonly<Record<string, string | undefined>>) => {
+    latestRateLimit = mapRateLimit(headers)
+    if (headers["x-ratelimit-remaining"] === "0") gate.trip(gateKey, latestRateLimit.resetAt ?? undefined)
+    else gate.clear(gateKey)
+    return headers
+  }
+
+  /** GETs revalidate against a stored ETag; everything else goes out unconditionally. */
+  const revalidation = (read: boolean, gateKey: string, url: string, parameters: RequestParameters) => {
+    const cacheKey = read ? `${gateKey} ${url} ${JSON.stringify(parameters)}` : null
+    const cached = cacheKey === null ? undefined : etagCache.get(cacheKey)
+    const conditional: RequestParameters = cached
+      ? { ...parameters, headers: { ...parameters.headers, "if-none-match": cached.etag } }
+      : parameters
+    return { cacheKey, cached, conditional }
+  }
+
+  const remember = (cacheKey: string, etag: string, data: unknown): void => {
+    etagCache.delete(cacheKey)
+    etagCache.set(cacheKey, { etag, data })
+    // ponytail: insertion-order LRU at 500 entries; size by bytes if memory matters.
+    if (etagCache.size > ETAG_CACHE_LIMIT) etagCache.delete(etagCache.keys().next().value!)
+  }
+
+  const failed = (error: unknown, gateKey: string, repository: string | undefined): GitHubApiError => {
+    const mapped = githubError(error, repository, gateKey)
+    if (mapped.reason === "token-expired") options.auth.invalidate(gateKey)
+    if (mapped.reason === "rate-limited") gate.trip(gateKey, mapped.retryAt)
+    return mapped
   }
 
   const resolveSlug = async (slug: string): Promise<GitHubRepository> => {

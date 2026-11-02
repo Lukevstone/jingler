@@ -58,7 +58,7 @@ function Flow() {
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null)
 
   return (
-    <AppShell title="Project navigation flow">
+    <AppShell>
       <SessionConversation
         projects={projects}
         sessions={sessions}

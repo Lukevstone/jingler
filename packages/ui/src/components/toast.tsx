@@ -47,7 +47,7 @@ export function Toast({ variant, title, description, action, onDismiss, classNam
           </Button>
         )}
       </div>
-      <Button variant="ghost" size="icon" className="-m-1 size-6" aria-label="Dismiss notification" onClick={onDismiss}>
+      <Button variant="ghost" size="icon" className="-m-1 size-6" aria-label="Dismiss notification" title="Dismiss notification" onClick={onDismiss}>
         <X size={13} />
       </Button>
     </div>

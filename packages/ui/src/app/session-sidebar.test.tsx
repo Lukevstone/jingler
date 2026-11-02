@@ -1,7 +1,8 @@
+import type { ProviderId } from "@jingler/core"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_FILTERS } from "./session-filters.js"
-import { SessionSidebar } from "./session-sidebar.js"
+import { mostUsedProvider, SessionSidebar } from "./session-sidebar.js"
 import { testSession as session } from "../test-support.js"
 import { activeSurface, allTabs, createEditorLayout, dropTab, focusedGroup, openTab, saveEditorLayout } from "./editor-layout.js"
 import { editorLayoutOf, resetEditorLayouts, updateEditorLayout } from "./editor-layout-machine.js"
@@ -126,7 +127,7 @@ describe("SessionSidebar session identity", () => {
   it("shows repository, attention age, PR, execution location, and status", () => {
     render(
       <SessionSidebar
-        activeSessionId="cloud-run"
+        activeSessionId="other"
         onSelect={() => {}}
         sessions={[
           session({
@@ -158,6 +159,41 @@ describe("SessionSidebar session identity", () => {
     )
     expect(screen.getByRole("status", { name: "Running" })).toBeTruthy()
     expect(screen.getByAltText("j").getAttribute("src")).toContain("github.com/jinglerhq.png")
+  })
+
+  it("drops metadata the row would only repeat", () => {
+    render(
+      <SessionSidebar
+        activeSessionId="active"
+        onSelect={() => {}}
+        sessions={[
+          session({ id: "active", title: "Active one", prNumber: 11, providerId: "anthropic" as ProviderId }),
+          session({ id: "local", title: "Local one", prNumber: 22, providerId: "anthropic" as ProviderId, executionLocation: "local" }),
+          session({ id: "odd", title: "Odd one", providerId: "openai-codex" as ProviderId, environmentId: "device-up" })
+        ]}
+        environments={[{
+          kind: "owned",
+          id: "device-up", name: "upbox", platform: { os: "darwin", arch: "arm64" },
+          capabilities: { version: 1, capabilities: ["session.start"], maxConcurrentSessions: 4 },
+          state: "online", agentVersion: "2.0.3", lastSeenAt: 1
+        }]}
+      />
+    )
+    // The active row's PR is a header chip; inactive rows keep theirs.
+    expect(within(screen.getByTestId("session-row-active")).queryByText("#11")).toBeNull()
+    expect(within(screen.getByTestId("session-row-local")).getByText("#22")).toBeTruthy()
+    // Local is the default location; an online environment is the normal state.
+    expect(screen.queryByTestId("session-location-local")).toBeNull()
+    expect(screen.queryByTestId("session-environment-odd")).toBeNull()
+    // Only the provider that differs from the majority gets an icon.
+    expect(within(screen.getByTestId("session-row-local")).queryByTitle("Anthropic")).toBeNull()
+    expect(within(screen.getByTestId("session-row-odd")).getByTitle("OpenAI")).toBeTruthy()
+  })
+
+  it("picks a default provider only when one wins outright", () => {
+    expect(mostUsedProvider([session({ id: "a", providerId: "anthropic" as ProviderId }), session({ id: "b", providerId: "anthropic" as ProviderId }), session({ id: "c", providerId: "openai-codex" as ProviderId })])).toBe("anthropic")
+    expect(mostUsedProvider([session({ id: "a", providerId: "anthropic" as ProviderId }), session({ id: "b", providerId: "openai-codex" as ProviderId })])).toBeUndefined()
+    expect(mostUsedProvider([])).toBeUndefined()
   })
 
   it("disables a row and shows a breathing indicator while archiving", async () => {
@@ -493,7 +529,7 @@ describe("SessionSidebar session tree", () => {
     session({
       id: "s1",
       chats: [
-        { id: "c1", title: "Main chat", createdAt: "now", updatedAt: "now", providerId: "anthropic" as never },
+        { id: "c1", title: "Main chat", createdAt: "now", updatedAt: "now", providerId: "anthropic" as ProviderId as never },
         { id: "c2", title: "Side chat", createdAt: "now", updatedAt: "now" }
       ],
       activeChatId: "c1"

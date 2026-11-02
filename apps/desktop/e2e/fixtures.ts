@@ -184,6 +184,10 @@ export const addProject = async (window: Page, projectPath: string): Promise<voi
 export const sessionRow = (window: Page, title: string) =>
   window.locator("[data-testid^='session-row-']").filter({ hasText: title });
 
+/** The sidebar row of the session on screen (the header no longer names it). */
+export const activeSessionRow = (window: Page) =>
+  window.locator("[data-testid^='session-row-'][aria-current='page']");
+
 /**
  * Click a session in the sidebar. The common case of {@link sessionRow}.
  *

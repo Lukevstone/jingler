@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { appShell, expect, test } from "./fixtures.js"
+import { activeSessionRow, appShell, expect, test } from "./fixtures.js"
 import type { SeedSession } from "./fixtures.js"
 
 const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString()
@@ -93,10 +93,8 @@ test("sidebar prioritises attention and exposes session identity at a glance", a
   )
   await expect(attention.getByTitle("OpenAI")).toBeVisible()
 
-  await expect(window.getByTestId("session-location-s_running")).toHaveAttribute(
-    "title",
-    "Local session"
-  )
+  // Local is the default location, so the row carries no location icon.
+  await expect(window.getByTestId("session-location-s_running")).toHaveCount(0)
   await expect(running.getByTitle("Repository: widget")).toHaveAttribute("data-repo-owner", "acme")
 
   const [appBackground, titleBarBackground] = await Promise.all([
@@ -107,7 +105,7 @@ test("sidebar prioritises attention and exposes session identity at a glance", a
 
   await running.click()
   // Chat tabs have no breadcrumb (Paper 04b/04h); the session header names the session.
-  await expect(window.getByTestId("session-header-identity")).toContainText("Liquid glass sidebar")
+  await expect(activeSessionRow(window)).toContainText("Liquid glass sidebar")
 
   const sidebarSurface = await window.getByTestId("session-sidebar").evaluate((element) => {
     const style = getComputedStyle(element)

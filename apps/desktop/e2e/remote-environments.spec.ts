@@ -113,7 +113,7 @@ test("selects an account-owned environment from the composer and reflects it in 
     app.window.getByRole("button", { name: "Execution environment" }).locator('[data-environment-icon="local"]')
   ).toBeVisible()
   await selectComposerEnvironment(app.window)
-  await expect(app.window.getByTestId("session-environment-session_local_abcdefgh")).toHaveText("buildbox")
+  await expect(app.window.getByTestId("session-location-session_local_abcdefgh")).toHaveAttribute("title", "Environment: buildbox · online")
   await expect(app.window.getByRole("button", { name: "Execution environment" })).toContainText("buildbox")
   await expect(
     app.window.getByRole("button", { name: "Execution environment" }).locator('[data-environment-icon="remote"]')

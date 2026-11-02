@@ -23,7 +23,7 @@ function CopyBranchButton({ branch }: { branch: string }) {
       variant="ghost"
       size="icon"
       className="size-5 shrink-0"
-      aria-label={copied ? "Copied branch name" : "Copy branch name"}
+      aria-label={copied ? "Copied branch name" : "Copy branch name"} title={copied ? "Copied branch name" : "Copy branch name"}
       onClick={() => {
         void navigator.clipboard?.writeText(branch)
         setCopied(true)

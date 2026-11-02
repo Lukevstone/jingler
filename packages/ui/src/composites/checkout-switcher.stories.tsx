@@ -12,12 +12,11 @@ const checkouts: ReadonlyArray<SessionCheckout> = [
   { id: "c3", repo: "org/docs", branch: "feat/x-docs", prNumber: null }
 ]
 
-/** Three repos: two with PRs (one green, one running), one with a branch only. */
+/** Three repos in the composer: the active one named, the menu lists every `repo · branch`. */
 export const MultiRepo: Story = {
   args: {
     checkouts,
     activeCheckoutId: "c2",
-    prStates: { primary: { state: "open", checks: "pass" }, c2: { state: "draft", checks: "running" } },
     onSwitch: () => {}
   }
 }
