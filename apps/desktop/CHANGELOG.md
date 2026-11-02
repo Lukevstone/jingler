@@ -1,5 +1,13 @@
 # @jingler/desktop
 
+## 0.17.3
+
+### Patch Changes
+
+- ad55a2b: Multi-repo sessions: each repo's section in the Changes sidebar now collapses. The active repo opens automatically (including when the agent switches repos), other repos start collapsed, and each header shows its changed-file count.
+- 58acf34: The Pull Request tab no longer uses up GitHub's rate limit. It polls a cheap PR state every 30 seconds and only reloads the full view when something actually changes, and background PR checks pause while the window is unfocused.
+  - @jingler/plannotator-ext@0.17.3
+
 ## 0.17.2
 
 ### Patch Changes
