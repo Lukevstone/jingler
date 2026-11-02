@@ -1,5 +1,13 @@
 # @jingler/device-agent
 
+## 0.17.1
+
+### Patch Changes
+
+- 29e911b: Fix subagents failing with "invalid x-api-key" or missing tools: the bundled subagent worker can load its Claude provider and Jingler tool extensions again.
+  - @jingler/cli-adapters@0.17.1
+  - @jingler/core@0.17.1
+
 ## 0.17.0
 
 ### Patch Changes
