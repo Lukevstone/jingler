@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { GitHubCli } from "./github-cli.js"
+import { GitHubCli, resetGhRateGate } from "./github-cli.js"
 import { fakeCommandExecutor } from "./test-support.js"
 
 const run = <A>(effect: Effect.Effect<A, unknown, unknown>, handler: Parameters<typeof fakeCommandExecutor>[0]): Promise<A> =>
@@ -329,16 +329,35 @@ describe("GitHubCli", () => {
     expect(result).toMatchObject({ _tag: "Left", left: { reason: "not-found" } })
   })
 
-  it("returns null only for an explicit no-PR result", async () => {
+  it("resolves worktree PRs from one shared open-PR list per clone", async () => {
+    resetGhRateGate()
+    const calls: string[] = []
+    const handler: Parameters<typeof fakeCommandExecutor>[0] = (command, args) => {
+      calls.push(`${command} ${args.join(" ")}`)
+      if (command === "git" && args.includes("--abbrev-ref")) return { exitCode: 0, stdout: "feature\n" }
+      if (command === "git") return { exitCode: 0, stdout: "/repo/.git\n" }
+      return { exitCode: 0, stdout: JSON.stringify([
+        { number: 7, headRefName: "feature", isCrossRepository: false },
+        { number: 8, headRefName: "fork-feature", isCrossRepository: true }
+      ]) }
+    }
+    await expect(run(GitHubCli.prForWorktree("/wt-a"), handler)).resolves.toBe(7)
+    await expect(run(GitHubCli.prForWorktree("/wt-b"), handler)).resolves.toBe(7)
+    expect(calls.filter((call) => call.startsWith("gh "))).toEqual([
+      "gh pr list --state open --limit 200 --json number,headRefName,isCrossRepository"
+    ])
+  })
+
+  it("returns null with no open PR for the branch and surfaces gh failures", async () => {
+    resetGhRateGate()
+    const git = (command: string, args: ReadonlyArray<string>) =>
+      command === "git" ? { exitCode: 0, stdout: args.includes("--abbrev-ref") ? "feature" : "/repo/.git" } : undefined
     await expect(run(GitHubCli.prForWorktree("/repo"), (command, args) =>
-      command === "gh" && args[0] === "pr"
-        ? { exitCode: 1, stderr: "no pull requests found for branch feature" }
-        : undefined
+      git(command, args) ?? { exitCode: 0, stdout: "[]" }
     )).resolves.toBeNull()
+    resetGhRateGate()
     await expect(run(GitHubCli.prForWorktree("/repo"), (command, args) =>
-      command === "gh" && args[0] === "pr"
-        ? { exitCode: 1, stderr: "network unavailable" }
-        : undefined
+      git(command, args) ?? { exitCode: 1, stderr: "network unavailable" }
     )).rejects.toMatchObject({ message: "network unavailable" })
   })
 })

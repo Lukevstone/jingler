@@ -1275,6 +1275,8 @@ function AuthedApp({
   useEffect(() => {
     if (!autoDetect) return;
     const detect = () => {
+      // An unfocused window still polled every worktree; the post-run re-detect covers new PRs meanwhile.
+      if (!document.hasFocus()) return;
       for (const session of sessionsRef.current) {
         if (
           !activeCheckoutOf(session).worktreePath ||

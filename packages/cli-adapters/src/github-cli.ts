@@ -16,7 +16,7 @@ import { GitHubApiError } from "@jingler/core"
 import { Command, CommandExecutor } from "@effect/platform"
 import type { PlatformError } from "@effect/platform/Error"
 import { Effect, Stream } from "effect"
-import { makeRateGate } from "./github-rate-gate.js"
+import { MAX_IN_FLIGHT, makeRateGate } from "./github-rate-gate.js"
 import {
   jsonRecord,
   mapApiFiles,
@@ -120,10 +120,23 @@ const ghFailure = (message: string, bucket: string | null): GitHubApiError => {
     message
   })
 }
-/** Test isolation only: the gate is module state shared by every gh call. */
+/** Caps concurrent gh processes; the gate's own `run` is Promise-based, so Effect calls share this. */
+const ghSlots = Effect.unsafeMakeSemaphore(MAX_IN_FLIGHT)
+/**
+ * Open PRs by head branch, one `gh pr list` per clone (keyed by git common dir)
+ * shared for OPEN_PRS_TTL_MS. The app sweep asks for every worktree each tick;
+ * without this each asked GitHub separately (43 worktrees → 43 calls a minute).
+ */
+const OPEN_PRS_TTL_MS = 20_000
+const openPrCache = new Map<string, {
+  readonly expires: number
+  readonly prs: Effect.Effect<ReadonlyMap<string, number>, GitHubApiError, CommandExecutor.CommandExecutor>
+}>()
+/** Test isolation only: the gate and PR cache are module state shared by every gh call. */
 export const resetGhRateGate = (): void => {
   ghGate.clear("core")
   ghGate.clear("graphql")
+  openPrCache.clear()
 }
 const PR_LIST_FIELDS = "number,title,headRefName,baseRefName,author,state,isDraft,additions,deletions,updatedAt"
 const ISSUE_FIELDS = "number,title,body,state,url,author,assignees,labels,updatedAt,createdAt,comments"
@@ -148,7 +161,7 @@ const execute = (
   stdin?: string,
   environment?: Readonly<Record<string, string>>
 ): Effect.Effect<string, GitHubApiError, CommandExecutor.CommandExecutor> =>
-  Effect.scoped(
+  ghSlots.withPermits(1)(Effect.scoped(
     Effect.gen(function* () {
       const bucket = ghBucket(args)
       if (bucket !== null) yield* Effect.try({ try: () => ghGate.check(bucket), catch: (error) => error as GitHubApiError })
@@ -174,7 +187,7 @@ const execute = (
         ? Effect.fail(error)
         : Effect.fail(new GitHubApiError({ reason: "unavailable", message: "GitHub CLI failed." }))
     )
-  )
+  ))
 
 const json = (
   cwd: string | null,
@@ -401,6 +414,44 @@ const writeJson = (
   body: unknown
 ): Effect.Effect<void, GitHubApiError, CommandExecutor.CommandExecutor> =>
   execute(cwd, args, JSON.stringify(body)).pipe(Effect.asVoid)
+
+const gitAt = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<string | null, never, CommandExecutor.CommandExecutor> =>
+  Command.make("git", ...args).pipe(
+    Command.workingDirectory(cwd),
+    Command.string,
+    Effect.map((output) => output.trim() || null),
+    Effect.orElseSucceed(() => null)
+  )
+
+// ponytail: first 200 open PRs per repo; page if a repo ever has more open at once.
+const listOpenPrs = (cwd: string): Effect.Effect<ReadonlyMap<string, number>, GitHubApiError, CommandExecutor.CommandExecutor> =>
+  json(cwd, ["pr", "list", "--state", "open", "--limit", "200", "--json", "number,headRefName,isCrossRepository"]).pipe(
+    Effect.map((raw) => new Map(records(raw).flatMap((pr) =>
+      pr.isCrossRepository !== true && typeof pr.headRefName === "string" && typeof pr.number === "number"
+        ? [[pr.headRefName, pr.number] as const]
+        : []
+    )))
+  )
+
+const openPrsFor = (cwd: string, clone: string) =>
+  Effect.gen(function* () {
+    const hit = openPrCache.get(clone)
+    if (hit !== undefined && hit.expires > Date.now()) return yield* hit.prs
+    const prs = yield* Effect.cached(listOpenPrs(cwd))
+    openPrCache.set(clone, { expires: Date.now() + OPEN_PRS_TTL_MS, prs })
+    return yield* prs
+  })
+
+/** The open PR whose head is this worktree's branch, from the clone's shared open-PR list. */
+const prForWorktree = (cwd: string): Effect.Effect<number | null, GitHubApiError, CommandExecutor.CommandExecutor> =>
+  Effect.gen(function* () {
+    const [branch, clone] = yield* Effect.all([
+      gitAt(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
+      gitAt(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+    ])
+    if (branch === null || branch === "HEAD") return null
+    return (yield* openPrsFor(cwd, clone ?? cwd)).get(branch) ?? null
+  })
 
 const slugAt = (cwd: string): Effect.Effect<string, GitHubApiError, CommandExecutor.CommandExecutor> =>
   execute(cwd, ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
@@ -917,18 +968,7 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
       Effect.flatMap(slugAt(cwd), (repository) => prForBranch(cwd, repository, branch)),
     prForBranchBySlug: (repository: string, branch: string) =>
       prForBranch(null, repository, branch),
-    prForWorktree: (cwd: string) =>
-      json(cwd, ["pr", "view", "--json", "number,state"]).pipe(
-        Effect.map((raw) => {
-          const pr = jsonRecord(raw)
-          return String(pr.state).toUpperCase() === "OPEN" && typeof pr.number === "number"
-            ? pr.number
-            : null
-        }),
-        Effect.catchTag("GitHubApiError", (error) =>
-          NO_PULL_REQUEST.test(error.message) ? Effect.succeed(null) : Effect.fail(error)
-        )
-      ),
+    prForWorktree,
     listPrs: (cwd: string, options: { readonly mine: boolean; readonly search: string }) =>
       list(cwd, "pr", null, PR_LIST_FIELDS, options, mapPrSummary),
     listPrsBySlug: (repository: string, options: { readonly mine: boolean; readonly search: string }) =>
