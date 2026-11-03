@@ -94,6 +94,7 @@ import {
 } from "./use-explanation-document.js";
 import { setFirstMessage } from "./first-message-store.js";
 import { SessionSubagentTabs, SubagentLaneViewProvider } from "./session-chat-tabs.js";
+import { SideChatLaneActionsProvider } from "./side-chat-lane-actions.js";
 import { useAgentEditsMarkerRenderer } from "./file-agent-edits.js";
 import { sessionPrRows } from "@jingler/ui";
 import { requestSessionPr } from "./session-pr-request.js";
@@ -1701,6 +1702,7 @@ function AuthedApp({
       )}
       <ObsidianSaveToast />
       <SubagentLaneViewProvider>
+      <SideChatLaneActionsProvider sessions={sessions}>
       <AgentEditsMarkerContext.Provider value={renderAgentEditsMarker}>
       <JinglerApp
         tabContributions={pluginTabs}
@@ -2189,6 +2191,7 @@ function AuthedApp({
         version={window.jingler.appVersion}
       />
       </AgentEditsMarkerContext.Provider>
+      </SideChatLaneActionsProvider>
       </SubagentLaneViewProvider>
       {sessionMutationError !== null && (
         <div

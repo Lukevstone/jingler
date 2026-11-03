@@ -54,7 +54,7 @@ import { matchNewTabChord } from "./app-shortcuts.js"
 import { DropZoneOverlay, resolveDropEdge } from "./drop-zone-overlay.js"
 import { CommandPalette } from "./command-palette.js"
 import type { PaletteItem } from "./command-palette-model.js"
-import { ChatLaneHeader, SubagentLaneViewContext, type ChatLaneHeaderChat } from "./chat-lane-header.js"
+import { ChatLaneActionsContext, ChatLaneHeader, SubagentLaneViewContext, type ChatLaneHeaderChat } from "./chat-lane-header.js"
 
 /** Host-provided marker (`● N agent edits`) shown at the right of a file tab's breadcrumb. */
 export const AgentEditsMarkerContext = createContext<(sessionId: string, path: string) => ReactNode>(() => null)
@@ -414,6 +414,7 @@ const EditorGroup = memo(function EditorGroup({
   const [width, setWidth] = useState(0)
   const sectionRef = useRef<HTMLElement>(null)
   const resolveSubagentView = useContext(SubagentLaneViewContext)
+  const renderChatActions = useContext(ChatLaneActionsContext)
   const renderAgentEdits = useContext(AgentEditsMarkerContext)
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
   
@@ -491,6 +492,7 @@ const EditorGroup = memo(function EditorGroup({
             onToggleFollowAgent={api.onToggleFollowAgent}
             subagentSlot={api.renderSubagentChip?.((active as Extract<SessionSurface, { kind: "chat" }>).id)}
             subagentView={resolveSubagentView((active as Extract<SessionSurface, { kind: "chat" }>).id)}
+            actionsSlot={renderChatActions((active as Extract<SessionSurface, { kind: "chat" }>).id)}
           />
           <Launcher api={api} />
           {/* Hidden draggable elements for all chats to enable drag-to-split and programmatic close */}

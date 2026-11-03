@@ -35,6 +35,9 @@ export interface ChatLaneHeaderSubagentView {
 /** Window event that opens the focused lane's thread switcher (e.g. a toast's "View"). */
 export const OPEN_THREAD_SWITCHER_EVENT = "jingler:open-thread-switcher"
 
+/** Host-provided per-chat actions rendered right after New chat (e.g. the side chat toggle). */
+export const ChatLaneActionsContext = createContext<(chatId: string) => ReactNode>(() => null)
+
 /** Host-provided lookup so lane headers deep in the editor tree can show the breadcrumb. */
 export const SubagentLaneViewContext = createContext<(chatId: string) => ChatLaneHeaderSubagentView | null>(
   () => null
@@ -60,6 +63,8 @@ export interface ChatLaneHeaderProps {
   readonly subagentSlot?: ReactNode
   /** When set, the header shows `← Main`, then a status dot and `<agent> ▾` switcher; Esc also goes back. */
   readonly subagentView?: ChatLaneHeaderSubagentView | null
+  /** Rendered right after New chat, e.g. the side chat toggle. */
+  readonly actionsSlot?: ReactNode
 }
 
 /** The shared agent-follow toggle: in the lane header, or in its subagent slot via the host. */
@@ -168,7 +173,8 @@ export function ChatLaneHeader({
   followAgent = false,
   onToggleFollowAgent,
   subagentSlot,
-  subagentView
+  subagentView,
+  actionsSlot
 }: ChatLaneHeaderProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const onBack = subagentView?.onBack
@@ -283,6 +289,7 @@ export function ChatLaneHeader({
         </Button>
       )}
 
+      {!subagentView && actionsSlot}
       {!subagentView && <div data-testid="subagent-slot" className="flex-none">{subagentSlot}</div>}
       <span className="flex-1" />
 

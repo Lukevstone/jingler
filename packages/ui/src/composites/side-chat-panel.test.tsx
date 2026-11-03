@@ -49,4 +49,23 @@ describe("SideChatPanel", () => {
     fireEvent.click(screen.getByLabelText("Close side chat"))
     expect(p.onClose).toHaveBeenCalledOnce()
   })
+
+  it("shows the thinking orb only while an answer is streaming", () => {
+    const { rerender } = render(<SideChatPanel {...props({ busy: true })} />)
+    expect(screen.queryByTestId("side-chat-thinking")).not.toBeNull()
+    rerender(<SideChatPanel {...props({ busy: false })} />)
+    expect(screen.queryByTestId("side-chat-thinking")).toBeNull()
+  })
+
+  it("sends on Enter but keeps Shift+Enter for a newline", () => {
+    const p = props()
+    render(<SideChatPanel {...p} />)
+    const input = screen.getByLabelText("Ask a quick question")
+    fireEvent.change(input, { target: { value: "line one" } })
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true })
+    expect(p.onAsk).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect(p.onAsk).toHaveBeenCalledWith("line one")
+  })
 })
+
