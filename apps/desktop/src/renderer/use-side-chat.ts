@@ -1,28 +1,32 @@
-/** Thin React binding for the side chat dock. */
-import { useMachine } from "@xstate/react"
+/** Thin React binding for one chat's side chat (shared by the lane header and the dock). */
+import { useSelector } from "@xstate/react"
 import { useCallback } from "react"
-import { sideChatMachine } from "./side-chat-machine.js"
+import { sideChatActor } from "./side-chat-registry.js"
 
 export function useSideChat(sessionId: string, chatId: string) {
-  const [state, send] = useMachine(sideChatMachine)
-  const open = !state.matches("closed")
+  const actor = sideChatActor(sessionId, chatId)
+  const open = useSelector(actor, (state) => !state.matches("closed"))
+  const busy = useSelector(actor, (state) => state.matches({ open: "streaming" }))
+  const messages = useSelector(actor, (state) => state.context.messages)
+  const error = useSelector(actor, (state) => state.context.error)
+  const expanded = useSelector(actor, (state) => state.context.expanded)
   return {
     open,
-    busy: state.matches({ open: "streaming" }),
-    messages: state.context.messages,
-    error: state.context.error,
-    expanded: state.context.expanded,
+    busy,
+    messages,
+    error,
+    expanded,
     toggle: useCallback(
-      () => send(open ? { type: "CLOSE" } : { type: "OPEN", sessionId, chatId }),
-      [send, open, sessionId, chatId]
+      () => actor.send(actor.getSnapshot().matches("closed") ? { type: "OPEN", sessionId, chatId } : { type: "CLOSE" }),
+      [actor, sessionId, chatId]
     ),
-    ask: useCallback((text: string) => send({ type: "ASK", text }), [send]),
+    ask: useCallback((text: string) => actor.send({ type: "ASK", text }), [actor]),
     /** `/btw <question>` from the composer: open the dock (if shut) and ask in one go. */
     askFromComposer: useCallback((text: string) => {
-      send({ type: "OPEN", sessionId, chatId })
-      send({ type: "ASK", text })
-    }, [send, sessionId, chatId]),
-    close: useCallback(() => send({ type: "CLOSE" }), [send]),
-    toggleExpand: useCallback(() => send({ type: "TOGGLE_EXPAND" }), [send])
+      actor.send({ type: "OPEN", sessionId, chatId })
+      actor.send({ type: "ASK", text })
+    }, [actor, sessionId, chatId]),
+    close: useCallback(() => actor.send({ type: "CLOSE" }), [actor]),
+    toggleExpand: useCallback(() => actor.send({ type: "TOGGLE_EXPAND" }), [actor])
   }
 }

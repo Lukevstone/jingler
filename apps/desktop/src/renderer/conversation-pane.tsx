@@ -16,6 +16,7 @@ import type {
   Message,
   ProviderCatalog,
   ProviderConnectionId,
+  ProviderId,
   Session,
   SubagentFleetControlAction,
   SubagentFleetControlOutcome,
@@ -57,7 +58,6 @@ import {
   ProviderConnectSheet,
   PlanReview,
   SideChatPanel,
-  SideChatToggleButton,
   useContainerWidth,
   OPEN_THREAD_SWITCHER_EVENT
 } from "@jingler/ui"
@@ -241,20 +241,16 @@ function McpRecoveryCards({
 
 type SideChat = ReturnType<typeof useSideChat>
 
-/** Hidden wherever the backend would refuse: the same rule `SideChat.ask` applies. */
-function SideChatToggle({ session, chat, sideChat }: { session: Session; chat: Session["chats"][number]; sideChat: SideChat }) {
-  if (!sideChatSupport(session, chat.id).ok) return null
-  return <SideChatToggleButton active={sideChat.open} onClick={sideChat.toggle} className="absolute right-3 top-2 z-10" />
-}
-
-function SideChatDock({ sideChat }: { sideChat: SideChat }) {
+function SideChatDock({ sideChat, session, chat }: { sideChat: SideChat; session: Session; chat: Session["chats"][number] }) {
   if (!sideChat.open) return null
+  const providerId: ProviderId | null = chat.providerId ?? session.providerId ?? null
   return (
     <SideChatPanel
       messages={sideChat.messages}
       busy={sideChat.busy}
       error={sideChat.error}
       expanded={sideChat.expanded}
+      providerId={providerId}
       onAsk={sideChat.ask}
       onClose={sideChat.close}
       onToggleExpand={sideChat.toggleExpand}
@@ -1189,7 +1185,6 @@ export function ConversationPane({
         it; this outer row did not, so the constraint stopped one level short. */}
     <div ref={planSplitRowRef} className="flex min-h-0 min-w-0 flex-1" style={{ "--sb-font-scale": fontScale } as CSSProperties}>
       <div ref={mainColumnRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <SideChatToggle session={session} chat={activeChat} sideChat={sideChat} />
       {offlineDevice && <DeviceOfflineBanner device={offlineDevice.name} onContinueLocally={offlineDevice.continueLocally} />}
       {renderEnvironmentNotices({
               convo,
@@ -1373,7 +1368,7 @@ export function ConversationPane({
           </div>
         </>
       )}
-      <SideChatDock sideChat={sideChat} />
+      <SideChatDock sideChat={sideChat} session={session} chat={activeChat} />
     </div>
     </AttachmentSourceProvider>
     </OpenAssetProvider>
