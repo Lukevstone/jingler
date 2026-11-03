@@ -130,6 +130,34 @@ describe("shared harness planning", () => {
     await conversation
   })
 
+  it("runs a side chat beside the active conversation without its planning binding", async () => {
+    const f = await setup()
+    let conversationStarted = false
+    let finishConversation!: () => void
+    const conversationFinished = new Promise<void>((resolve) => { finishConversation = resolve })
+    const runtime = f.wrap(async function* (_registry, spec, context) {
+      if (spec.role === "conversation") {
+        conversationStarted = true
+        await conversationFinished
+      } else {
+        expect(spec.role).toBe("side-chat")
+        expect(context.planning).toBeUndefined()
+      }
+      yield done
+    })
+
+    const conversation = f.run(runtime)
+    await vi.waitFor(() => expect(conversationStarted).toBe(true))
+    await expect(f.run(runtime, {
+      ...specFor(f.root),
+      runId: "side",
+      role: "side-chat",
+      mode: "read-only"
+    })).resolves.toBeDefined()
+    finishConversation()
+    await conversation
+  })
+
   it("rejects foreign/stale decisions and concurrent updates; changed disk content cannot be approved", async () => {
     const f = await setup(); const spec = specFor(f.root)
     let registry!: ToolRegistry; let bound!: AgentRuntimeContext

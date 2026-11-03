@@ -179,7 +179,6 @@ import {
   WebSearchError,
   applyImportResolutions,
   type McpImportResolution,
-  executionTargetOf,
 } from "@jingler/core";
 import type {
   BrowserBounds,
@@ -6199,11 +6198,11 @@ const ReviewHandlersLayer = JinglerReviewRpcs.toLayer({
     Stream.unwrap(
       Effect.gen(function* () {
         const session = yield* SessionStore.get(sessionId)
-        if (executionTargetOf(session).kind !== "local") {
-          return Stream.succeed<StreamEvent>({ _tag: "Failed", message: "Side chat isn't available on remote sessions yet." })
-        }
         const runtime = yield* AgentRuntime
-        return runSideChat(runtime, session, chatId, thread, prompt)
+        const mainTranscript = yield* TranscriptStore.list(chatId).pipe(
+          Effect.orElseSucceed(() => [] as ReadonlyArray<Message>),
+        )
+        return runSideChat(runtime, session, chatId, thread, prompt, mainTranscript)
       }),
     ).pipe(
       Stream.catchAll((cause) =>

@@ -17,6 +17,11 @@ export function useSideChat(sessionId: string, chatId: string) {
       [send, open, sessionId, chatId]
     ),
     ask: useCallback((text: string) => send({ type: "ASK", text }), [send]),
+    /** `/btw <question>` from the composer: open the dock (if shut) and ask in one go. */
+    askFromComposer: useCallback((text: string) => {
+      send({ type: "OPEN", sessionId, chatId })
+      send({ type: "ASK", text })
+    }, [send, sessionId, chatId]),
     close: useCallback(() => send({ type: "CLOSE" }), [send]),
     toggleExpand: useCallback(() => send({ type: "TOGGLE_EXPAND" }), [send])
   }

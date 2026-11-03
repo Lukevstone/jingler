@@ -30,7 +30,9 @@ import {
   clampFontScale,
   countNodesAwaitingAttention,
   piEndpointId,
-  plannotatorProjectionToPlanDocument
+  plannotatorProjectionToPlanDocument,
+  sideChatQuestion,
+  sideChatSupport
 } from "@jingler/core"
 import {
   AttachmentSourceProvider,
@@ -239,10 +241,9 @@ function McpRecoveryCards({
 
 type SideChat = ReturnType<typeof useSideChat>
 
-/** Hidden without a runtime identity: the same check the side-chat spec builder makes. */
+/** Hidden wherever the backend would refuse: the same rule `SideChat.ask` applies. */
 function SideChatToggle({ session, chat, sideChat }: { session: Session; chat: Session["chats"][number]; sideChat: SideChat }) {
-  const available = (chat.endpointId ?? session.endpointId) !== undefined && (chat.modelId ?? session.modelId) !== undefined
-  if (!available) return null
+  if (!sideChatSupport(session, chat.id).ok) return null
   return <SideChatToggleButton active={sideChat.open} onClick={sideChat.toggle} className="absolute right-3 top-2 z-10" />
 }
 
@@ -839,6 +840,15 @@ export function ConversationPane({
   const pendingReviewId = plannotatorReviewId(convo.plannotator)
   const { offline, waiting, setWaiting, hold } = useOfflineSendQueue(convo.sendPrompt)
   const sendPrompt: typeof convo.sendPrompt = (text, images) => {
+    const btw = sideChatQuestion(text)
+    if (btw !== null) {
+      // Never falls through to the main thread: a side question must not enter the session.
+      clearDraft(activeChat.id)
+      const support = sideChatSupport(session, activeChat.id)
+      if (support.ok) sideChat.askFromComposer(btw)
+      else onPushToast?.({ key: `side-chat-${session.id}`, variant: "error", title: support.reason })
+      return
+    }
     // Structured ranges stay out of the editable textarea, but every harness
     // receives the same deterministic plain-text context at the turn boundary.
     // Read the store now rather than using the render snapshot: Files can append

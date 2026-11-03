@@ -25,6 +25,13 @@ test("side chat answers, follows up, leaves the main transcript alone and clears
   await expect(appShell(window)).toBeVisible()
   await window.getByTestId("session-row-s_side_chat").click()
 
+  // A real main turn first, so the isolation checks below have a transcript to look at.
+  const transcript = window.getByTestId("conversation-scroll")
+  const composer = window.getByPlaceholder("Message the agent…")
+  await composer.fill("Main thread question")
+  await composer.press("Enter")
+  await expect(transcript.getByText("Main thread question")).toBeVisible({ timeout: 20_000 })
+
   await window.getByRole("button", { name: "Open side chat" }).click()
   const panel = window.getByTestId("side-chat-panel")
   await expect(panel).toBeVisible()
@@ -40,13 +47,35 @@ test("side chat answers, follows up, leaves the main transcript alone and clears
   await ask.press("Enter")
   await expect(panel.getByText("Side answer #2")).toBeVisible({ timeout: 20_000 })
 
-  // Nothing from the side thread reaches the main transcript.
-  const main = window.locator("main, [data-testid='conversation-view']").first()
-  await expect(main.getByText("which branch?")).toHaveCount(0)
-  await expect(main.getByText(/Side answer/)).toHaveCount(0)
+  // The transcript is really there, and nothing from the side thread reached it.
+  await expect(transcript).toBeVisible()
+  await expect(transcript.getByText("Main thread question")).toBeVisible()
+  await expect(transcript.getByText(/which branch\?|follow-up\?/)).toHaveCount(0)
+  await expect(transcript.getByText(/Side answer/)).toHaveCount(0)
 
   await panel.getByRole("button", { name: "Close side chat" }).click()
   await expect(panel).toHaveCount(0)
   await window.getByRole("button", { name: "Open side chat" }).click()
   await expect(window.getByTestId("side-chat-panel").getByText(/Side answer/)).toHaveCount(0)
+})
+
+test("/btw in the composer opens the side chat and asks there, not in the main thread", async ({ launchApp }) => {
+  const { window } = await launchApp({
+    configured: true,
+    withRepo: true,
+    sessions: (context) => [{ ...session, worktreePath: context.repoPath }]
+  })
+  await window.setViewportSize({ width: 1600, height: 900 })
+  await expect(appShell(window)).toBeVisible()
+  await window.getByTestId("session-row-s_side_chat").click()
+
+  const composer = window.getByPlaceholder("Message the agent…")
+  await composer.fill("/btw [[side-chat]] quick one")
+  await composer.press("Enter")
+
+  const panel = window.getByTestId("side-chat-panel")
+  await expect(panel.getByText("[[side-chat]] quick one")).toBeVisible({ timeout: 20_000 })
+  await expect(panel.getByText("Side answer #1")).toBeVisible({ timeout: 20_000 })
+  await expect(composer).toHaveValue("")
+  await expect(window.getByTestId("conversation-scroll").getByText(/quick one|Side answer/)).toHaveCount(0)
 })

@@ -321,7 +321,8 @@ export const makeSharedPlanningRuntime = (directory: string, piSessionsDir: stri
       await session.decide(owner, decision)
     }),
     run: (original, context) => Stream.unwrapScoped(Effect.gen(function* () {
-      if (original.role === "title" || original.role === "context-digest" || original.role === "review") return runtime.run(original, context)
+      // Tool-less roles never touch the plan, and a side chat must run beside the chat's own bound turn.
+      if (original.role === "title" || original.role === "context-digest" || original.role === "review" || original.role === "side-chat") return runtime.run(original, context)
       const spec = original
       const key = JSON.stringify([spec.sessionId, spec.chatId])
       const session = sessions.get(key) ?? new PlanningSession(storedState(directory, spec.sessionId, spec.chatId))

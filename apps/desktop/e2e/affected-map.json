@@ -663,7 +663,9 @@
       "apps/desktop/src/renderer/use-side-chat.ts",
       "packages/ui/src/composites/side-chat-panel",
       "packages/cli-adapters/src/runtime/agent/read-only-role.ts",
-      "apps/desktop/src/main/e2e/pi-fixture.ts"
+      "apps/desktop/src/main/e2e/pi-fixture.ts",
+      "packages/core/src/side-chat-support.ts",
+      "packages/cli-adapters/src/runtime/agent/shared-planning.ts"
     ],
     "specs": [
       "side-chat.spec.ts"
