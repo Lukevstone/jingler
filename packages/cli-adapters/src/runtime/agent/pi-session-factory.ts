@@ -278,7 +278,21 @@ const seedTranscript = (manager: SessionManager, spec: AgentRunSpec): void => {
   )
 }
 
+/** Side chats copy the main session into memory: the agent sees it all, and nothing is ever written to disk. */
+const sideChatSessionManager = (spec: AgentRunSpec, sessionsDir: string): SessionManager => {
+  const source = spec.continuation === null ? null : SessionManager.open(spec.continuation.id, sessionsDir, spec.cwd)
+  const header = source?.getHeader()
+  const manager = SessionManager.inMemory(
+    spec.cwd,
+    header ? { parentSession: header.id } : undefined,
+    header && source ? [header, ...source.getEntries()] : undefined
+  )
+  seedTranscript(manager, { ...spec, seed: { reason: "migration", messages: spec.priorMessages } })
+  return manager
+}
+
 const sessionManagerFor = (spec: AgentRunSpec, sessionsDir: string): SessionManager => {
+  if (spec.role === "side-chat") return sideChatSessionManager(spec, sessionsDir)
   if (spec.continuation !== null && spec.seed === null) {
     return SessionManager.open(spec.continuation.id, sessionsDir, spec.cwd)
   }
@@ -417,7 +431,7 @@ const createEmbeddedSession = (
         })
       }
       const toolSpec = spec
-      const customTools = registry ? [...createPiTools(registry, toolSpec, context)] : []
+      const customTools = registry && spec.role !== "side-chat" ? [...createPiTools(registry, toolSpec, context)] : []
       const thinkingLevel = thinkingLevelFor(spec.reasoning)
       const sessionManager = sessionManagerFor(spec, options.sessionsDir)
       // The plan scratchpad tools ride in every mode: submit opens operator
@@ -425,7 +439,7 @@ const createEmbeddedSession = (
       // workflow while using the same tracked tools as an Auto conversation.
       const configured = await createConfiguredPiSession(
         spec,
-        nativeSubagentsEnabled,
+        nativeSubagentsEnabled && spec.role !== "side-chat",
         customTools,
         options,
         modelRuntime,

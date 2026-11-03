@@ -11,6 +11,7 @@ let initialized = false
 let thread = process.env.CODEX_HOME === 'unique-threads' ? `thread-${process.pid}` : 'thread-1'
 let resumed = false
 let policy
+let forked
 let toolConfig
 let systemPrompt
 let pending
@@ -72,6 +73,7 @@ const handleTurnStart = async (id, p) => {
     note('item/agentMessage/delta', { itemId: 'detached-worker-progress', delta: 'Detached Codex child progress: waiting for stop.' })
     return
   }
+  if (prompt.endsWith('side-policy')) { note('item/agentMessage/delta', { itemId: 'side', delta: JSON.stringify({ forked, prompt }) }); done(); return }
   if (prompt === 'policy') { note('item/agentMessage/delta', { itemId: 'policy', delta: JSON.stringify(policy) }); done(); return }
   if (prompt === 'wait') { note('item/agentMessage/delta', { itemId: 'ready', delta: 'ready' }); return }
   if (['approval', 'file-approval', 'question', 'permissions'].includes(prompt)) {
@@ -134,10 +136,15 @@ const handleFailure = (method, id) => {
   else if (method !== 'timeout') return false
   return true
 }
+const recordFork = (method, p) => {
+  if (method !== 'thread/fork' && !(method === 'thread/start' && p.ephemeral)) return
+  forked = { method, threadId: p.threadId, ephemeral: p.ephemeral, sandbox: p.sandbox, approvalPolicy: p.approvalPolicy, servers: Object.keys(p.config?.mcp_servers ?? {}) }
+}
 const handleMessage = (message) => {
   const { id, method, params: p } = message
   if (method === 'thread/start' || method === 'thread/resume') { toolConfig = p.config?.mcp_servers?.jingler; systemPrompt = p.developerInstructions }
   if (method === 'thread/start' || method === 'thread/resume') policy = { approvalPolicy: p.approvalPolicy, sandbox: p.sandbox, approvalsReviewer: p.approvalsReviewer }
+  recordFork(method, p)
   if (method === 'initialize') { reply(id, { userAgent: 'fake', platformFamily: 'unix', platformOs: 'linux' }); return }
   if (method === 'initialized') { initialized = true; return }
   if (!initialized) { send({ id, error: { code: -1, message: 'Not initialized' } }); return }

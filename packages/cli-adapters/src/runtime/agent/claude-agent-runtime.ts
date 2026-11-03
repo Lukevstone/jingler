@@ -65,7 +65,9 @@ export const claudeAgentArguments = (
   sessionId: string,
   mcpConfigPath?: string,
   systemPrompt?: string
-): ReadonlyArray<string> => [
+): ReadonlyArray<string> => {
+  const sideChat = spec.role === "side-chat"
+  return [
   "-p",
   "--output-format", "stream-json",
   "--input-format", "stream-json",
@@ -77,18 +79,22 @@ export const claudeAgentArguments = (
   "--system-prompt-snapshot", "off",
   ...(systemPrompt === undefined ? [] : ["--system-prompt", systemPrompt]),
   "--no-chrome",
-  ...claudeToolArguments(claudeArtifactsAllowed(spec.role, spec.mode)),
+  ...(sideChat ? ["--tools", ""] : claudeToolArguments(claudeArtifactsAllowed(spec.role, spec.mode))),
   "--strict-mcp-config",
-  ...(mcpConfigPath === undefined ? [] : ["--mcp-config", mcpConfigPath]),
+  ...(sideChat || mcpConfigPath === undefined ? [] : ["--mcp-config", mcpConfigPath]),
   ...permissionArgs(spec.mode),
   ...reasoningArgs(spec.reasoning),
   ...(spec.continuation === null
     ? ["--session-id", sessionId]
-    : ["--resume", spec.continuation.id])
-]
+    : ["--resume", spec.continuation.id, ...(sideChat ? ["--fork-session"] : [])]),
+  // Side chats are throwaway: the main chat's transcript never changes and no new session is saved.
+  ...(sideChat ? ["--no-session-persistence"] : [])
+  ]
+}
 
 const transcriptText = (spec: AgentRunSpec): string => {
-  if (spec.continuation !== null) return spec.prompt
+  // A side chat forks the main session, so its own earlier Q&A still has to ride in the prompt.
+  if (spec.continuation !== null && spec.role !== "side-chat") return spec.prompt
   const messages = spec.seed?.messages ?? spec.priorMessages
   if (messages.length === 0) return spec.prompt
   const transcript = messages.map((message) => {
@@ -341,10 +347,12 @@ async function* runClaude(
   signal: AbortSignal
 ): AsyncGenerator<StreamEvent> {
   const sessionId = spec.continuation?.id ?? randomUUID()
+  // A side chat forks the main session and must run while that session's own turn holds its id.
+  const reservation = spec.role === "side-chat" ? randomUUID() : sessionId
   const binary = await resolveClaudeBinary(options.binary)
   const environment = claudeCliEnvironment(options.environment ?? process.env)
   const scope = await Effect.runPromise(Scope.make())
-  await reserveClaudeSession(reserved, sessionId, scope)
+  await reserveClaudeSession(reserved, reservation, scope)
   let relay: RegistryMcpRelay | undefined
   let child: ChildProcessWithoutNullStreams | undefined
   let onAbort = () => {}
@@ -368,7 +376,7 @@ async function* runClaude(
       spawned.once("spawn", resolve)
       spawned.once("error", reject)
     })
-    active.set(sessionId, child)
+    active.set(reservation, child)
     let stderr = ""
     child.stderr.setEncoding("utf8")
     child.stderr.on("data", (chunk: string) => {
@@ -383,7 +391,7 @@ async function* runClaude(
       output,
       { _tag: "Started", sessionId, model: spec.modelId },
       // A terminal event wins over an interrupt delivered by its consumer.
-      () => { if (active.get(sessionId) === child) active.delete(sessionId) }
+      () => { if (active.get(reservation) === child) active.delete(reservation) }
     )
     const exitCode = await waitForExit(spawned)
     if (exitCode !== 0) {
@@ -399,8 +407,8 @@ async function* runClaude(
     }
     if (!output.terminal) throw new Error("Claude CLI exited without a result")
   } finally {
-    if (active.get(sessionId) === child) active.delete(sessionId)
-    reserved.delete(sessionId)
+    if (active.get(reservation) === child) active.delete(reservation)
+    reserved.delete(reservation)
     signal.removeEventListener("abort", onAbort)
     if (child !== undefined) await stopProcess(child)
     await Effect.runPromise(Scope.close(scope, Exit.void))

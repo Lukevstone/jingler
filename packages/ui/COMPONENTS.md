@@ -206,6 +206,7 @@ Vendored BeUI primitives; the Jingler atoms above wrap them. Import the Jingler 
 | SettingsView, DevicesSection | `composites/settings-view.tsx` | Full settings page; DevicesSection. | key, label, icon, ready | yes | — |
 | SignInDialog | `composites/sign-in-dialog.tsx` | Optional sign-in dialog from the sidebar footer: a standard dialog panel hosting the flattened auth card, every LoginState. | open, onOpenChange | yes | #517 (13.7) |
 | SlashCommandRow | `composites/slash-command-row.tsx` | Row in the slash-command palette. | — | yes | — |
+| SideChatPanel, SideChatToggleButton | `composites/side-chat-panel.tsx` | Right-hand "Side chat" dock (Claude Code `/btw`): hint card, user/assistant messages (StreamingText), "Ask a quick question…" composer, expand and close. Built on Button, Input, StreamingText. | messages, busy, error, expanded, onAsk, onClose, onToggleExpand; toggle: active, onClick | yes | — |
 | StreamingText | `composites/streaming-text.tsx` | Markdown-preserving streaming text. | — | yes | — |
 | ThemesSettings | `composites/themes-settings.tsx` | Settings › Themes. | themes, skipped, activeId, onSelect, onDuplicate, onDelete | no | — |
 | ThoughtBlock | `composites/thought-block.tsx` | Agent reasoning line in the transcript. | — | yes | — |

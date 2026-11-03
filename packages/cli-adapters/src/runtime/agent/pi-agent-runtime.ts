@@ -302,6 +302,38 @@ const runSession = (
     )
   )
 
+/** Side chats never touch the retained registry: a one-off in-memory handle, disposed when the stream ends. */
+const runSideChat = (
+  factory: PiSessionFactory,
+  spec: AgentRunSpec,
+  context: AgentRuntimeContext
+): Stream.Stream<StreamEvent, AgentRuntimeError> =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<StreamEvent>()
+      const handle = yield* factory.create(spec, context)
+      const sink = makeEventSink(queue, handle.observe)
+      sink.emit({ _tag: "Started", sessionId: handle.id, model: handle.modelId })
+      const unsubscribe = subscribeToSession(handle, sink)
+      startPrompt(handle, spec.prompt, spec.images, sink)
+      return Stream.fromQueue(queue).pipe(
+        Stream.takeUntil((event) => event._tag === "Done" || event._tag === "Failed"),
+        Stream.ensuring(
+          Queue.shutdown(queue).pipe(
+            Effect.zipRight(Effect.promise(async () => {
+              unsubscribe()
+              await handle.dispose()
+            }))
+          )
+        )
+      )
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.succeed(Stream.succeed<StreamEvent>({ _tag: "Failed", message: error.message }))
+      )
+    )
+  )
+
 export interface PiAgentRuntimeOptions {
   /** Internal deterministic-test seam; production uses conservative polling. */
   readonly retainedSessionPollMs?: number
@@ -341,7 +373,9 @@ export const makePiAgentRuntime = (
     }
 
     return {
-      run: (spec, context) => runSession(sessions, spec, context),
+      run: (spec, context) => spec.role === "side-chat"
+        ? runSideChat(factory, spec, context)
+        : runSession(sessions, spec, context),
       steer: (continuation, _targetId, text) => sessionOperation(
         sessions.lookup(continuation.id),
         continuation.id,

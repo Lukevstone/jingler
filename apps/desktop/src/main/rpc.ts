@@ -28,6 +28,7 @@ import {
   findInterruptedChats,
   AgentRuntime,
   runtimeOwnerForSession,
+  runSideChat,
   AppPaths,
   AssetService,
   AuthService,
@@ -178,6 +179,7 @@ import {
   WebSearchError,
   applyImportResolutions,
   type McpImportResolution,
+  executionTargetOf,
 } from "@jingler/core";
 import type {
   BrowserBounds,
@@ -6192,6 +6194,25 @@ const CoreHandlersLayer = JinglerCoreRpcs.toLayer({
 });
 
 const ReviewHandlersLayer = JinglerReviewRpcs.toLayer({
+  // Side chat (Claude Code's /btw): forked context, no tools, nothing written to the session.
+  "SideChat.ask": ({ sessionId, chatId, thread, prompt }) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const session = yield* SessionStore.get(sessionId)
+        if (executionTargetOf(session).kind !== "local") {
+          return Stream.succeed<StreamEvent>({ _tag: "Failed", message: "Side chat isn't available on remote sessions yet." })
+        }
+        const runtime = yield* AgentRuntime
+        return runSideChat(runtime, session, chatId, thread, prompt)
+      }),
+    ).pipe(
+      Stream.catchAll((cause) =>
+        Stream.succeed<StreamEvent>({
+          _tag: "Failed",
+          message: typeof cause === "object" && cause !== null && "message" in cause ? String(cause.message) : "Side chat failed",
+        }),
+      ),
+    ),
   "Github.recordPrEvent": ({ sessionId, kind, number }) => recordPrEvent(sessionId, kind, number),
   "Github.inbox": () => githubPrInbox(),
   "Github.teams": () => GitHubApi.teams(),

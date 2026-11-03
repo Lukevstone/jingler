@@ -1876,6 +1876,22 @@ export class JinglerReviewRpcs extends RpcGroup.make(
     payload: { sessionId: Schema.String, chatId: Schema.String }
   }),
 
+  /**
+   * Ask a side question about a chat (Claude Code's `/btw`): forked context, no
+   * tools, never persisted. `thread` is the side conversation so far; unsubscribing
+   * cancels the run.
+   */
+  Rpc.make("SideChat.ask", {
+    success: StreamEvent,
+    stream: true,
+    payload: {
+      sessionId: Schema.String,
+      chatId: Schema.String,
+      thread: Schema.Array(Message),
+      prompt: Schema.String
+    }
+  }),
+
   Rpc.make("Review.watch", {
     success: StreamEvent,
     stream: true,

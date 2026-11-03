@@ -31,6 +31,7 @@ import {
 import { CodexClient, CodexRpcError, codexEnvironment, type CodexClientOptions, type CodexMessage } from "./client.js"
 import { CodexEvents } from "./events.js"
 import type { ThreadStartParams } from "./generated/v2/ThreadStartParams.js"
+import type { ThreadForkParams } from "./generated/v2/ThreadForkParams.js"
 import type { TurnStartParams } from "./generated/v2/TurnStartParams.js"
 import type { TurnSteerParams } from "./generated/v2/TurnSteerParams.js"
 import type { ToolRequestUserInputParams } from "./generated/v2/ToolRequestUserInputParams.js"
@@ -263,6 +264,18 @@ const openThread = async (
   }
   let fresh = spec.continuation === null
   let response: { thread: { id: string } }
+  if (spec.role === "side-chat") {
+    // Fork into a throwaway thread so the main chat's rollout never changes.
+    response = spec.continuation
+      ? await client.request("thread/fork", {
+          ...params,
+          threadId: spec.continuation.id,
+          excludeTurns: true,
+          ephemeral: true
+        } satisfies ThreadForkParams)
+      : await client.request("thread/start", { ...params, ephemeral: true })
+    return { response, fresh }
+  }
   if (spec.continuation) {
     try {
       const continuationParams = {
@@ -292,7 +305,8 @@ const openThread = async (
 const turnParams = (spec: AgentRunSpec, threadId: string, fresh: boolean): TurnStartParams => ({
   threadId,
   input: [
-    textInput(fresh ? seedPrompt(spec) : spec.prompt),
+    // A side chat forks the main thread, so its own earlier Q&A still has to ride in the prompt.
+    textInput(fresh || spec.role === "side-chat" ? seedPrompt(spec) : spec.prompt),
     ...(spec.images ?? []).map((image) => ({
       type: "image" as const,
       url: `data:${image.mediaType};base64,${image.data}`
@@ -389,6 +403,8 @@ export const makeCodexAgentRuntime = (options: CodexRuntimeOptions = {}): AgentR
               // Only our authenticated relay bypasses the vendor prompt; the registry still owns every permission decision.
               attachment.config.mcp_servers.jingler!.default_tools_approval_mode = "approve"
               attachment.config.mcp_servers.jingler!.tool_timeout_sec = INTERACTIVE_TOOL_TIMEOUT_MS / 1000
+              // Side chats answer from context only: no relay, so no Jingler tools.
+              if (spec.role === "side-chat") attachment.config.mcp_servers = {}
               return attachment
             },
             catch: failure
@@ -438,7 +454,8 @@ export const makeCodexAgentRuntime = (options: CodexRuntimeOptions = {}): AgentR
     config: ThreadStartParams["config"],
     systemPrompt: string
   ): AsyncGenerator<StreamEvent> {
-    const pendingKey = spec.continuation
+    // A side chat forks the main thread and must run while that thread's own turn holds its key.
+    const pendingKey = spec.continuation && spec.role !== "side-chat"
       ? key(spec.continuation, spec.targetCapabilities.targetId)
       : undefined
     if (pendingKey && reserved.has(pendingKey))

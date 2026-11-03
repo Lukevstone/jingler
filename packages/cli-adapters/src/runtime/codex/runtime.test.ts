@@ -263,6 +263,35 @@ describe("native Codex protocol", () => {
       }) })
     }
   })
+  it("forks side chats into an ephemeral read-only thread with no relay and replays the side thread", async () => {
+    const priorMessages = [{
+      id: "side-1",
+      role: "user" as const,
+      parts: [{ _tag: "Text" as const, text: "earlier side question" }],
+      streaming: false,
+      createdAt: "2026-11-03T00:00:00.000Z"
+    }]
+    const forked = await collect(spec({
+      role: "side-chat",
+      mode: "read-only",
+      prompt: "side-policy",
+      priorMessages,
+      continuation: { runtimeId: "codex", endpointId, id: "main-thread" }
+    }))
+    const answer = JSON.parse(forked.flatMap((event) => event._tag === "Assistant" ? [event.text] : []).join(""))
+    expect(answer.forked).toEqual({
+      method: "thread/fork",
+      threadId: "main-thread",
+      ephemeral: true,
+      sandbox: "read-only",
+      approvalPolicy: "never",
+      servers: []
+    })
+    expect(answer.prompt).toContain("earlier side question")
+    const fresh = await collect(spec({ role: "side-chat", mode: "read-only", prompt: "side-policy" }))
+    const freshAnswer = JSON.parse(fresh.flatMap((event) => event._tag === "Assistant" ? [event.text] : []).join(""))
+    expect(freshAnswer.forked).toMatchObject({ method: "thread/start", ephemeral: true, sandbox: "read-only" })
+  })
   describe.each(["auto", "plan", "read-only"] as const)("%s approvals", (mode) => {
     it.each(["approval", "file-approval", "permissions"])("routes %s correctly", async (prompt) => {
       const canUseTool = vi.fn(() => Effect.succeed("allow" as const))

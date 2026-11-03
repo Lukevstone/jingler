@@ -191,6 +191,26 @@ describe("PiAgentRuntime", () => {
     expect(disposed).toBe(true)
   })
 
+  it("runs side chats on a fresh disposable handle, never the retained main session", async () => {
+    const handles: PiSessionHandle[] = []
+    const create = vi.fn((_spec: AgentRunSpec) => {
+      const handle = settlingHandle({ childActive: false })
+      handles.push(handle)
+      return Effect.succeed(handle)
+    })
+    const runtime = await Effect.runPromise(makePiAgentRuntime({ create }))
+    const continuation = piContinuation("/sessions/parent.jsonl")
+    await Effect.runPromise(Stream.runCollect(runtime.run({ ...spec, continuation }, context)))
+    const side = { ...spec, role: "side-chat" as const, mode: "read-only" as const, continuation }
+    const first = await Effect.runPromise(Stream.runCollect(runtime.run(side, context)))
+    const second = await Effect.runPromise(Stream.runCollect(runtime.run({ ...side, runId: "run-2" }, context)))
+    expect([...first, ...second].filter((event) => event._tag === "Failed")).toEqual([])
+    expect(create).toHaveBeenCalledTimes(3)
+    expect(create.mock.calls.slice(1).map(([created]) => created.role)).toEqual(["side-chat", "side-chat"])
+    expect(handles[1]!.dispose).toHaveBeenCalledOnce()
+    expect(handles[2]!.dispose).toHaveBeenCalledOnce()
+  })
+
   it("delivers the terminal event before closing a slow consumer", async () => {
     let listener: ((event: AgentSessionEvent) => void) | null = null
     const handle: PiSessionHandle = {
