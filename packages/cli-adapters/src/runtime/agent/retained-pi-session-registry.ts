@@ -120,7 +120,8 @@ const detachedPiSessionContext = (context: AgentRuntimeContext, chat: ChatRef): 
   canUseTool: context.canUseTool,
   askQuestion: () => Effect.succeed([]),
   publishExplanation: () => Effect.void,
-  ...(context.checkouts === undefined ? {} : { checkouts: context.checkouts })
+  ...(context.checkouts === undefined ? {} : { checkouts: context.checkouts }),
+  ...(context.liveMode === undefined ? {} : { liveMode: context.liveMode })
 })
 
 export const rebindablePiSessionContext = (
@@ -129,6 +130,7 @@ export const rebindablePiSessionContext = (
   get planning() { return holder.current.planning },
   get mcp() { return holder.current.mcp },
   get workModeHost() { return holder.current.workModeHost },
+  get liveMode() { return holder.current.liveMode },
   // A retained session registers its tools once; a stable facade keeps them on the CURRENT turn's host.
   get checkouts() {
     return holder.current.checkouts === undefined ? undefined : liveCheckoutHost(() => holder.current.checkouts!)

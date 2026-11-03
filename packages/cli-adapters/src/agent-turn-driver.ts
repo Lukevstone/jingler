@@ -7,7 +7,8 @@ import type {
   QuestionAnswer,
   QuestionRequest,
   StreamEvent,
-  UsageFact
+  UsageFact,
+  RuntimeMode
 } from "@jingler/core"
 import type { AgentRunError } from "@jingler/core"
 import { Context, Effect, Layer } from "effect"
@@ -119,6 +120,7 @@ export interface AgentContext {
   readonly checkouts?: CheckoutHost
   /** Enables `jingler_set_work_mode`. */
   readonly workModeHost?: WorkModeHost
+  readonly liveMode?: () => RuntimeMode
 }
 
 /**

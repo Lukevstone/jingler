@@ -7,6 +7,7 @@ import {
 import { registerWorkspaceInspectionTools } from "../tools/workspace-tools.js"
 import { inactiveRuntimeActivity, type AgentRuntimeContext } from "./agent-runtime.js"
 import { createPiTools, parseStringifiedArguments } from "./pi-tool-bridge.js"
+import { executeRegistryTool } from "./registry-tool-bridge.js"
 
 const spec = {
   role: "conversation",
@@ -130,6 +131,64 @@ describe("pi tool permission denial", () => {
       status: "error",
       error: { code: "forbidden" }
     })
+  })
+})
+
+describe("pi tool live work mode", () => {
+  const planWriteRegistry = (execute: (input: unknown, context: { plan?: boolean }) => Promise<unknown>) => {
+    const registry = new ToolRegistry({
+      observer: {
+        started: () => Effect.succeed({ cwd: "/workspace", tree: "tree-before" }),
+        settled: () => Effect.succeed({
+          id: "set-1", callId: "call-1", changes: [], totals: { added: 0, removed: 0 },
+          authoritative: true, reconciledAt: "2026-08-10T00:00:00.000Z"
+        })
+      }
+    })
+    registry.register({
+      id: "workspace_write",
+      version: "1",
+      description: "Write a file.",
+      input: Schema.Struct({ path: Schema.String }),
+      risk: "mutate",
+      roles: ["conversation"],
+      modes: ["auto", "plan"],
+      timeoutMs: 1_000,
+      outputBudget: 1_000,
+      cancellable: true,
+      idempotency: "keyed",
+      execute
+    })
+    return registry
+  }
+
+  it("applies a mid-turn switch to plan instead of the turn's stale mode", async () => {
+    const execute = vi.fn(async (_input: unknown, _context: { plan?: boolean }) => ({ ok: true }))
+    const canUseTool = vi.fn(() => Effect.succeed("deny" as const))
+    const [tool] = createPiTools(planWriteRegistry(execute), { role: "conversation", mode: "auto" }, {
+      ...inactiveRuntimeActivity,
+      canUseTool,
+      askQuestion: () => Effect.succeed([]),
+      liveMode: () => "plan"
+    })
+
+    const result = await tool?.execute("call-1", { path: "plans/x.md" }, undefined, undefined, {} as never)
+
+    expect(canUseTool).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledOnce()
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({ plan: true })
+    expect(result?.details).toMatchObject({ status: "success" })
+  })
+
+  it("never widens a read-only run to the live mode", async () => {
+    const execute = vi.fn(async () => ({ ok: true }))
+    const result = await executeRegistryTool({
+      registry: planWriteRegistry(execute), spec: { role: "conversation", mode: "read-only" },
+      context: { ...inactiveRuntimeActivity, canUseTool: () => Effect.succeed("allow"), askQuestion: () => Effect.succeed([]), liveMode: () => "auto" },
+      id: "workspace_write", toolCallId: "call-1", parameters: { path: "a.md" }, signal: undefined, allowed: true, onUpdate: undefined
+    })
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.details).toMatchObject({ status: "error", error: { code: "forbidden" } })
   })
 })
 
