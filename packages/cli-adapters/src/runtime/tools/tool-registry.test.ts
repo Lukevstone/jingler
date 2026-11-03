@@ -220,3 +220,23 @@ it("denies shell, delegation and external tools before execution in safe mode", 
     }
   } finally { resetWorkspaceAdmissions() }
 })
+
+describe("offered capabilities", () => {
+  const registry = new ToolRegistry()
+  const tool = (id: string, risk: "read" | "mutate", modes: ReadonlyArray<"plan" | "auto" | "read-only">) => registry.register({
+    id, version: "1", description: id, input: Schema.Struct({}), risk,
+    roles: ["conversation"], modes, timeoutMs: 1_000, outputBudget: 1_000,
+    cancellable: false, idempotency: "safe", execute: async () => null
+  })
+  tool("workspace_read_file", "read", ["plan", "auto", "read-only"])
+  tool("workspace_delete", "mutate", ["auto"])
+
+  it("widens a switchable chat to both plan and build tools", () => {
+    expect(registry.offeredCapabilitiesFor("conversation", "plan", true).map(({ id }) => id)).toEqual(["workspace_read_file", "workspace_delete"])
+    expect(registry.offeredCapabilitiesFor("conversation", "plan", false).map(({ id }) => id)).toEqual(["workspace_read_file"])
+  })
+
+  it("never widens a read-only run", () => {
+    expect(registry.offeredCapabilitiesFor("conversation", "read-only", true).map(({ id }) => id)).toEqual(["workspace_read_file"])
+  })
+})

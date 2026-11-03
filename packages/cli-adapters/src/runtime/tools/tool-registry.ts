@@ -207,6 +207,8 @@ const allowed = (tool: AnyToolDefinition, role: AgentRole, mode: RuntimeMode): b
   !(mode === "read-only" && mutatingRisk(tool.risk)) &&
   (!isPlan(role, mode) || planAllows(tool))
 
+const SWITCHABLE_MODES = ["plan", "ask", "accept-edits", "auto"] as const
+
 const errorEnvelope = (error: ToolError): ToolResultEnvelope => ({
   status: error.code === "cancelled" ? "cancelled" : "error",
   value: null,
@@ -493,6 +495,18 @@ export class ToolRegistry {
   capabilitiesFor(role: AgentRole, mode: RuntimeMode): ReadonlyArray<PromptToolCapability> {
     return [...this.#tools.values()]
       .filter((tool) => allowed(tool, role, mode))
+      .map(({ id, version, description }) => ({ id, version, description }))
+  }
+
+  /**
+   * The tools a turn advertises. A chat that can switch plan/build mid-turn is
+   * offered both lists, because no harness reliably refreshes its tool list
+   * mid-turn; `allowed` re-checks the live mode on every call.
+   */
+  offeredCapabilitiesFor(role: AgentRole, mode: RuntimeMode, switchable: boolean): ReadonlyArray<PromptToolCapability> {
+    if (!switchable || role === "plan" || mode === "read-only") return this.capabilitiesFor(role, mode)
+    return [...this.#tools.values()]
+      .filter((tool) => SWITCHABLE_MODES.some((reachable) => allowed(tool, role, reachable)))
       .map(({ id, version, description }) => ({ id, version, description }))
   }
 

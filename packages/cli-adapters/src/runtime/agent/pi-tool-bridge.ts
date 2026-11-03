@@ -35,7 +35,7 @@ export const createPiTools = (
   context: AgentRuntimeContext,
   options: PiToolBridgeOptions = {}
 ): ReadonlyArray<PiToolDefinition> =>
-  registry.capabilitiesFor(spec.role, spec.mode).map((capability) => {
+  registry.offeredCapabilitiesFor(spec.role, spec.mode, context.workModeHost !== undefined).map((capability) => {
     const input = registry.inputSchemaFor(capability.id)
     if (input === null) {
       throw new Error(`Active tool has no input schema: ${capability.id}`)

@@ -180,6 +180,59 @@ describe("pi tool live work mode", () => {
     expect(result?.details).toMatchObject({ status: "success" })
   })
 
+  it("applies a mid-turn plan approval: offered tools run under build rules", async () => {
+    const execute = vi.fn(async (_input: unknown, _context: { plan?: boolean }) => ({ ok: true }))
+    const canUseTool = vi.fn(() => Effect.succeed("allow" as const))
+    let mode: "plan" | "auto" = "plan"
+    const [tool] = createPiTools(planWriteRegistry(execute), { role: "conversation", mode: "plan" }, {
+      ...inactiveRuntimeActivity,
+      canUseTool,
+      askQuestion: () => Effect.succeed([]),
+      liveMode: () => mode
+    })
+
+    await tool?.execute("call-1", { path: "plans/x.md" }, undefined, undefined, {} as never)
+    expect(canUseTool).not.toHaveBeenCalled()
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({ plan: true })
+
+    mode = "auto"
+    const result = await tool?.execute("call-2", { path: "src/a.ts" }, undefined, undefined, {} as never)
+    expect(canUseTool).toHaveBeenCalledWith({ toolId: "workspace_write", risk: "mutate" })
+    expect(execute.mock.calls[1]?.[1]).not.toHaveProperty("plan")
+    expect(result?.details).toMatchObject({ status: "success" })
+  })
+
+  it("offers build-only tools to a switchable plan turn and runs them after approval", async () => {
+    const write = vi.fn(async () => ({ ok: true }))
+    const remove = vi.fn(async () => ({ removed: true }))
+    const registry = planWriteRegistry(write)
+    registry.register({
+      id: "workspace_delete", version: "1", description: "Delete a file.",
+      input: Schema.Struct({ path: Schema.String }), risk: "mutate",
+      roles: ["conversation"], modes: ["auto"], timeoutMs: 1_000, outputBudget: 1_000,
+      cancellable: true, idempotency: "keyed", execute: remove
+    })
+    let mode: "plan" | "auto" = "plan"
+    const tools = createPiTools(registry, { role: "conversation", mode: "plan" }, {
+      ...inactiveRuntimeActivity,
+      canUseTool: () => Effect.succeed("allow"),
+      askQuestion: () => Effect.succeed([]),
+      workModeHost: { autoSwitch: true, approvalIsAuto: () => true, canSwitch: () => true, takeSwitch: () => {} },
+      liveMode: () => mode
+    })
+    const del = tools.find(({ name }) => name === "workspace_delete")
+    expect(del).toBeDefined()
+
+    const blocked = await del?.execute("call-1", { path: "a.ts" }, undefined, undefined, {} as never)
+    expect(remove).not.toHaveBeenCalled()
+    expect(blocked?.details).toMatchObject({ status: "error", error: { code: "forbidden", message: expect.stringContaining("conversation/plan") } })
+
+    mode = "auto"
+    const result = await del?.execute("call-2", { path: "a.ts" }, undefined, undefined, {} as never)
+    expect(remove).toHaveBeenCalledOnce()
+    expect(result?.details).toMatchObject({ status: "success" })
+  })
+
   it("never widens a read-only run to the live mode", async () => {
     const execute = vi.fn(async () => ({ ok: true }))
     const result = await executeRegistryTool({

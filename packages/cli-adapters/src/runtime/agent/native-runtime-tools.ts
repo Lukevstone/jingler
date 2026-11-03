@@ -43,7 +43,7 @@ export const prepareNativeRuntimeTools = (
     createJinglerTools({ context, cwd: spec.cwd, mcp: context.mcp }).pipe(Effect.mapError(failure)))
   const instructions = yield* Effect.tryPromise({ try: () => instructionLayers(spec.cwd), catch: failure })
   const tools = [
-    ...registry.capabilitiesFor(spec.role, spec.mode),
+    ...registry.offeredCapabilitiesFor(spec.role, spec.mode, context.workModeHost !== undefined),
     ...(spec.runtimeId === "claude" && claudeArtifactsAllowed(spec.role, spec.mode) ? [claudeArtifactCapability] : [])
   ]
   const systemPrompt = yield* Effect.try({
