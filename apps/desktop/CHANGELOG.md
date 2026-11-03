@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.20.1
+
+### Patch Changes
+
+- 23908cc: Side chat now looks like the main chat: same message styling, a thinking indicator while it answers, and a mini composer (Enter sends, Shift+Enter adds a line). Its button moved next to New chat in the chat header and has a tooltip.
+  - @jingler/plannotator-ext@0.20.1
+
 ## 0.20.0
 
 ### Minor Changes
