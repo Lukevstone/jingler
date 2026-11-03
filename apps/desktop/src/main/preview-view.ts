@@ -44,9 +44,29 @@
  */
 import type { BrowserBounds } from "@jingler/core"
 import { BrowserControlError, BrowserPreviewError } from "@jingler/core"
+import type {
+  BrowserConsoleEntry,
+  BrowserConsoleFilter,
+  BrowserNetworkEntry,
+  BrowserNetworkFilter,
+  BrowserScreenshotOptions,
+  BrowserSnapshotElement
+} from "@jingler/cli-adapters"
 import { pathToFileURL } from "node:url"
-import { BrowserWindow, session as electronSession, WebContentsView } from "electron"
+import { BrowserWindow, nativeImage, session as electronSession, WebContentsView } from "electron"
 import { Context, Duration, Effect, Layer } from "effect"
+import { type BrowserRecorder, createBrowserRecorder } from "./browser-recorder.js"
+import {
+  cdpKeyEvents,
+  elementRectScript,
+  focusScript,
+  hideOverlayScript,
+  pointAtScript,
+  type PointerKind,
+  scrollByScript,
+  selectOptionScript,
+  snapshotScript
+} from "./browser-page-scripts.js"
 
 /** Which tab a native view belongs to. */
 export type PreviewOwner = "browser" | "asset"
@@ -68,6 +88,97 @@ export const browserPartitionForAgent = (sessionId: string, chatId: string): str
 
 /** Hard ceiling on `controlWaitForSelector`, so a bad caller can't pin the RPC. */
 const MAX_WAIT_MS = 30_000
+/** Chromium's max texture height; a taller full-page capture is cut and says so. */
+const MAX_FULL_PAGE_PX = 16_384
+/**
+ * The `Page.captureScreenshot` clip for a full-page capture, and a note when the
+ * page is taller than Chromium can capture in one texture. Exported for tests.
+ */
+export const fullPageClip = (content: { width: number; height: number }) => {
+  const height = Math.ceil(content.height)
+  return {
+    // ponytail: capped at Chromium's texture limit and reported; tile if taller pages matter.
+    clip: { x: 0, y: 0, width: Math.ceil(content.width), height: Math.min(height, MAX_FULL_PAGE_PX), scale: 1 },
+    note: height > MAX_FULL_PAGE_PX
+      ? `Page is ${height}px tall; only the top ${MAX_FULL_PAGE_PX}px were captured. Scroll and take viewport screenshots for the rest.`
+      : undefined
+  }
+}
+
+/**
+ * Provider image limits (Claude vision docs: 8000px per side; 5MB per image on
+ * Bedrock/Vertex). Bytes are raw PNG, kept under 5MB once base64-encoded.
+ */
+export const MAX_IMAGE_SIDE_PX = 8_000
+export const MAX_IMAGE_BYTES = 3_700_000
+
+/** Scale factor (<= 1) that brings a PNG within provider limits. Exported for tests. */
+export const providerFitScale = (width: number, height: number, bytes: number): number =>
+  Math.min(
+    1,
+    MAX_IMAGE_SIDE_PX / Math.max(width, height, 1),
+    // PNG size grows roughly with area; 0.9 leaves headroom for the estimate.
+    bytes > MAX_IMAGE_BYTES ? Math.sqrt(MAX_IMAGE_BYTES / bytes) * 0.9 : 1
+  )
+
+/** Downscale a screenshot until it fits provider limits, noting when it did. */
+const fitScreenshot = (png: Buffer, note?: string): { pngBase64: string; note?: string } => {
+  let image = nativeImage.createFromBuffer(png)
+  const original = image.getSize()
+  let bytes = png
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { width, height } = image.getSize()
+    const scale = providerFitScale(width, height, bytes.length)
+    if (scale >= 1) break
+    image = image.resize({ width: Math.max(1, Math.floor(width * scale)), height: Math.max(1, Math.floor(height * scale)) })
+    bytes = image.toPNG()
+  }
+  const final = image.getSize()
+  const scaled = final.width === original.width
+    ? undefined
+    : `Downscaled from ${original.width}x${original.height} to ${final.width}x${final.height} to fit model image limits.`
+  const notes = [note, scaled].filter((n): n is string => n !== undefined)
+  return notes.length === 0
+    ? { pngBase64: bytes.toString("base64") }
+    : { pngBase64: bytes.toString("base64"), note: notes.join(" ") }
+}
+
+/** How long back/reload may take before the tool reports failure. */
+const NAVIGATION_TIMEOUT_MS = 15_000
+
+/**
+ * Run `start` and resolve once the main frame finishes loading (or commits a
+ * same-document history step); reject on a main-frame load failure or timeout.
+ * Exported for tests.
+ */
+export const settleNavigation = (
+  wc: Pick<Electron.WebContents, "on" | "off">,
+  start: () => void,
+  timeoutMs = NAVIGATION_TIMEOUT_MS
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const done = (error?: Error) => {
+      clearTimeout(timer)
+      wc.off("did-finish-load", onFinish)
+      wc.off("did-navigate-in-page", onInPage)
+      wc.off("did-fail-load", onFail)
+      if (error) reject(error)
+      else resolve()
+    }
+    const onFinish = () => done()
+    const onInPage = (_e: unknown, _url: string, isMainFrame: boolean) => {
+      if (isMainFrame) done()
+    }
+    const onFail = (_e: unknown, code: number, description: string, url: string, isMainFrame: boolean) => {
+      const failure = previewLoadFailure(code, description, isMainFrame)
+      if (failure !== null) done(new Error(`${failure}: ${url}`))
+    }
+    const timer = setTimeout(() => done(new Error(`Navigation did not finish within ${timeoutMs}ms`)), timeoutMs)
+    wc.on("did-finish-load", onFinish)
+    wc.on("did-navigate-in-page", onInPage)
+    wc.on("did-fail-load", onFail)
+    start()
+  })
 
 /**
  * Main→renderer push: "an agent is driving the browser — open the Preview dock
@@ -160,8 +271,42 @@ export interface PreviewViewServiceShape {
   // carry the failing `op`.
   /** Load `url` (http/https only) into the browser and reveal the dock. */
   readonly controlNavigate: (sessionId: string, chatId: string, url: string) => Effect.Effect<void, BrowserControlError>
-  /** PNG screenshot of the current page, base64-encoded. */
-  readonly controlScreenshot: (sessionId: string, chatId: string) => Effect.Effect<{ pngBase64: string }, BrowserControlError>
+  /** PNG screenshot of the viewport, full page, or one element, base64-encoded. */
+  readonly controlScreenshot: (
+    sessionId: string,
+    chatId: string,
+    options?: BrowserScreenshotOptions
+  ) => Effect.Effect<{ pngBase64: string; note?: string }, BrowserControlError>
+  readonly controlHover: (sessionId: string, chatId: string, selector: string) => Effect.Effect<void, BrowserControlError>
+  readonly controlPressKey: (sessionId: string, chatId: string, key: string, selector?: string) => Effect.Effect<void, BrowserControlError>
+  readonly controlScroll: (
+    sessionId: string,
+    chatId: string,
+    options: { readonly selector?: string; readonly deltaY?: number }
+  ) => Effect.Effect<void, BrowserControlError>
+  readonly controlSelectOption: (sessionId: string, chatId: string, selector: string, value: string) => Effect.Effect<void, BrowserControlError>
+  readonly controlPageInfo: (sessionId: string, chatId: string) => Effect.Effect<{ url: string; title: string }, BrowserControlError>
+  readonly controlGoBack: (sessionId: string, chatId: string) => Effect.Effect<void, BrowserControlError>
+  readonly controlReload: (sessionId: string, chatId: string) => Effect.Effect<void, BrowserControlError>
+  readonly controlSnapshot: (
+    sessionId: string,
+    chatId: string
+  ) => Effect.Effect<{ elements: ReadonlyArray<BrowserSnapshotElement> }, BrowserControlError>
+  readonly controlNetworkRequests: (
+    sessionId: string,
+    chatId: string,
+    filter: BrowserNetworkFilter
+  ) => Effect.Effect<ReadonlyArray<BrowserNetworkEntry>, BrowserControlError>
+  readonly controlNetworkRequestDetail: (
+    sessionId: string,
+    chatId: string,
+    id: string
+  ) => Effect.Effect<{ entry: BrowserNetworkEntry; body: string | null }, BrowserControlError>
+  readonly controlConsoleLogs: (
+    sessionId: string,
+    chatId: string,
+    filter: BrowserConsoleFilter
+  ) => Effect.Effect<ReadonlyArray<BrowserConsoleEntry>, BrowserControlError>
   /** Click the first element matching `selector`; fails if nothing matches. */
   readonly controlClick: (sessionId: string, chatId: string, selector: string) => Effect.Effect<void, BrowserControlError>
   /** Type `text` into the first element matching `selector`; fails if none. */
@@ -231,6 +376,30 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
   // still-blank WebContents starts a second load and Electron aborts the first.
   const controlledNavigations = new Set<string>()
   const pendingNavigations = new Map<string, { requestedUrl: string; redirects: Set<string> }>()
+  const recorders = new Map<string, BrowserRecorder>()
+
+  // DevTools takes the debugger's only slot; recording pauses while it is open
+  // and resumes on the next control op after it closes (see `ensureDebugger`).
+  const ensureDebugger = async (wc: WebContentsView["webContents"]): Promise<void> => {
+    if (wc.debugger.isAttached()) return
+    try {
+      wc.debugger.attach("1.3")
+    } catch (cause) {
+      throw new Error(
+        `Could not attach the browser debugger (close DevTools on this preview first): ${cause instanceof Error ? cause.message : String(cause)}`
+      )
+    }
+    await Promise.all(["Network.enable", "Runtime.enable", "Log.enable"].map((m) => wc.debugger.sendCommand(m)))
+  }
+
+  const attachRecorder = (key: string, wc: WebContentsView["webContents"]) => {
+    const recorder = createBrowserRecorder((method, params) => wc.debugger.sendCommand(method, params))
+    recorders.set(key, recorder)
+    wc.debugger.on("message", (_event, method, params) => recorder.handle(method, params))
+    wc.on("devtools-closed", () => void ensureDebugger(wc).catch(() => {}))
+    wc.once("destroyed", () => recorders.delete(key))
+    ensureDebugger(wc).catch(() => {})
+  }
   const mainWindow = (): BrowserWindow | null => BrowserWindow.getAllWindows()[0] ?? null
   let visibilityWindow: BrowserWindow | null = null
   let windowFocused = true
@@ -344,6 +513,7 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
     })
     if (owner === "browser" && sessionId !== null && chatId !== null) {
       const key = browserOwnerKey(sessionId, chatId)
+      attachRecorder(key, view.webContents)
       const publishUrl = (url: string) => {
         if (!isHttpUrl(url)) return
         const pending = pendingNavigations.get(key)
@@ -461,6 +631,30 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
       }
       reveal(sessionId, chatId, v.webContents.getURL())
       return Effect.tryPromise({ try: () => f(v.webContents), catch: controlFail(op) })
+    })
+
+  /** Animate the agent cursor onto `selector`; fails when nothing matches. */
+  const pointAt = async (
+    wc: WebContentsView["webContents"],
+    selector: string,
+    kind: PointerKind
+  ): Promise<{ x: number; y: number }> => {
+    const point = (await wc.executeJavaScript(pointAtScript(selector, kind))) as { x: number; y: number } | null
+    if (point === null) throw new Error(`No element matches selector: ${selector}`)
+    return point
+  }
+
+  const withRecorder = <A>(
+    sessionId: string,
+    chatId: string,
+    op: string,
+    f: (recorder: BrowserRecorder) => Promise<A>
+  ): Effect.Effect<A, BrowserControlError> =>
+    withPage(sessionId, chatId, op, async (wc) => {
+      await ensureDebugger(wc)
+      const recorder = recorders.get(browserOwnerKey(sessionId, chatId))
+      if (!recorder) throw new Error("The browser recorder is not running")
+      return f(recorder)
     })
 
   const closeAllNow = (): void => {
@@ -618,14 +812,94 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
             new BrowserControlError({ op: "navigate", message: `Only http(s) URLs can be opened: ${url}` })
           ),
 
-    controlScreenshot: (sessionId, chatId) =>
+    controlScreenshot: (sessionId, chatId, options = {}) =>
       withPage(sessionId, chatId, "screenshot", async (wc) => {
-        const image = await wc.capturePage()
-        return { pngBase64: image.toPNG().toString("base64") }
+        await wc.executeJavaScript(hideOverlayScript)
+        if (options.selector !== undefined) {
+          const rect = await wc.executeJavaScript(elementRectScript(options.selector))
+          if (!rect) throw new Error(`No visible element matches selector: ${options.selector}`)
+          return fitScreenshot((await wc.capturePage(rect)).toPNG())
+        }
+        if (options.fullPage) {
+          await ensureDebugger(wc)
+          const { cssContentSize } = (await wc.debugger.sendCommand("Page.getLayoutMetrics")) as {
+            cssContentSize: { width: number; height: number }
+          }
+          const { clip, note } = fullPageClip(cssContentSize)
+          const { data } = (await wc.debugger.sendCommand("Page.captureScreenshot", {
+            format: "png",
+            captureBeyondViewport: true,
+            clip
+          })) as { data: string }
+          return fitScreenshot(Buffer.from(data, "base64"), note)
+        }
+        return fitScreenshot((await wc.capturePage()).toPNG())
       }),
+
+    controlHover: (sessionId, chatId, selector) =>
+      withPage(sessionId, chatId, "hover", async (wc) => {
+        const { x, y } = await pointAt(wc, selector, "hover")
+        await ensureDebugger(wc)
+        await wc.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x, y })
+      }),
+
+    controlPressKey: (sessionId, chatId, key, selector) =>
+      withPage(sessionId, chatId, "pressKey", async (wc) => {
+        const events = cdpKeyEvents(key)
+        if (selector !== undefined) {
+          await pointAt(wc, selector, "focus")
+          if (!(await wc.executeJavaScript(focusScript(selector)))) {
+            throw new Error(`No element matches selector: ${selector}`)
+          }
+        }
+        await ensureDebugger(wc)
+        for (const event of events) await wc.debugger.sendCommand("Input.dispatchKeyEvent", event)
+      }),
+
+    controlScroll: (sessionId, chatId, { selector, deltaY }) =>
+      withPage(sessionId, chatId, "scroll", async (wc) => {
+        if (selector !== undefined) await pointAt(wc, selector, "focus")
+        else await wc.executeJavaScript(scrollByScript(deltaY ?? 0))
+      }),
+
+    controlSelectOption: (sessionId, chatId, selector, value) =>
+      withPage(sessionId, chatId, "selectOption", async (wc) => {
+        await pointAt(wc, selector, "click")
+        const result = await wc.executeJavaScript(selectOptionScript(selector, value))
+        if (result === "not-select") throw new Error(`${selector} is not a <select> element`)
+        if (result === "no-option") throw new Error(`No option with value or label "${value}" in ${selector}`)
+        if (result !== "ok") throw new Error(`No element matches selector: ${selector}`)
+      }),
+
+    controlPageInfo: (sessionId, chatId) =>
+      withPage(sessionId, chatId, "pageInfo", async (wc) => ({ url: wc.getURL(), title: wc.getTitle() })),
+
+    controlGoBack: (sessionId, chatId) =>
+      withPage(sessionId, chatId, "goBack", async (wc) => {
+        if (!wc.navigationHistory.canGoBack()) throw new Error("No previous page in history")
+        await settleNavigation(wc, () => wc.navigationHistory.goBack())
+      }),
+
+    controlReload: (sessionId, chatId) =>
+      withPage(sessionId, chatId, "reload", (wc) => settleNavigation(wc, () => wc.reload())),
+
+    controlSnapshot: (sessionId, chatId) =>
+      withPage(sessionId, chatId, "snapshot", async (wc) => ({
+        elements: (await wc.executeJavaScript(snapshotScript)) as ReadonlyArray<BrowserSnapshotElement>
+      })),
+
+    controlNetworkRequests: (sessionId, chatId, filter) =>
+      withRecorder(sessionId, chatId, "networkRequests", async (recorder) => recorder.networkRequests(filter)),
+
+    controlNetworkRequestDetail: (sessionId, chatId, id) =>
+      withRecorder(sessionId, chatId, "networkRequestDetail", (recorder) => recorder.networkRequestDetail(id)),
+
+    controlConsoleLogs: (sessionId, chatId, filter) =>
+      withRecorder(sessionId, chatId, "consoleLogs", async (recorder) => recorder.consoleLogs(filter)),
 
     controlClick: (sessionId, chatId, selector) =>
       withPage(sessionId, chatId, "click", async (wc) => {
+        await pointAt(wc, selector, "click")
         const hit = await wc.executeJavaScript(
           `(() => { const el = document.querySelector(${JSON.stringify(selector)});` +
             ` if (!el) return false; el.click(); return true; })()`
@@ -641,6 +915,7 @@ export const PreviewViewServiceLive = Layer.scoped(PreviewViewService, Effect.ge
         // React's onChange treats the synthetic `input` as a no-op and controlled
         // components snap back. The native setter bypasses the tracker, which is
         // how testing-library/user-event drive React inputs too.
+        await pointAt(wc, selector, "type")
         const hit = await wc.executeJavaScript(
           `(() => { const el = document.querySelector(${JSON.stringify(selector)});` +
             ` if (!el) return false; el.focus();` +

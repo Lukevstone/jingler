@@ -49,6 +49,8 @@ test("links and shows a pull request through authenticated gh without a GitHub A
       `const inbox = ${JSON.stringify(inbox)}`,
       `const pr = ${JSON.stringify(pr)}`,
       "if (args[0] === 'auth' && args[1] === 'status') process.exit(0)",
+      // Detection matches the worktree's real branch against the open-PR list (#969).
+      "if (args[0] === 'pr' && args[1] === 'list') { const headRefName = require('node:child_process').execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim(); console.log(JSON.stringify([{ number: 42, headRefName, isCrossRepository: false }])); process.exit(0) }",
       "if (args[0] === 'pr' && args[1] === 'view') { console.log(JSON.stringify(joined.includes('number,state') ? { number: 42, state: 'OPEN' } : pr)); process.exit(0) }",
       "if (args[0] === 'repo' && args[1] === 'view') { console.log('acme/widget'); process.exit(0) }",
       "if (args[0] === 'api' && args[1] === 'repos/acme/widget') { console.log(JSON.stringify({ id: 7, node_id: 'R_7' })); process.exit(0) }",
@@ -73,7 +75,8 @@ test("links and shows a pull request through authenticated gh without a GitHub A
     })
 
     await expect(appShell(window)).toBeVisible()
-    await expect(window.getByText("#42", { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+    // The active session's PR is a header chip since #964, not a "#42" row glyph.
+    await expect(window.getByRole("button", { name: "PR #42" })).toBeVisible({ timeout: 20_000 })
     await window.getByTestId("header-view-checks").first().click()
     await expect(window.getByRole("heading", { name: "CLI-only pull request" })).toBeVisible()
     await expect(window.getByText("Loaded through authenticated GitHub CLI without an App installation.")).toBeVisible()

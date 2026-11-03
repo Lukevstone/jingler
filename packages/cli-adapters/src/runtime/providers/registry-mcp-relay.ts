@@ -11,7 +11,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import type { AgentRunSpec } from "@jingler/core"
 import { Effect, JSONSchema } from "effect"
 import type { AgentRuntimeContext } from "../agent/agent-runtime.js"
-import { executeRegistryTool } from "../agent/registry-tool-bridge.js"
+import { executeRegistryTool, registryResultText } from "../agent/registry-tool-bridge.js"
 import { toolTarget } from "../agent/pi-events.js"
 import type { ToolRegistry } from "../tools/tool-registry.js"
 import type { RuntimeRemoteMcpServer } from "../mcp/attachment.js"
@@ -95,7 +95,7 @@ export const startRegistryMcpRelay = async (
             onUpdate: (result) => {
               updates = updates.then(() => Effect.runPromise(input.context.publishEvent({
                 _tag: "ToolDelta", id: toolCallId,
-                output: result.content.map(({ text }) => text).join("\n")
+                output: registryResultText(result)
               }))).catch(() => { publicationFailed = true })
             }
           })
@@ -105,7 +105,7 @@ export const startRegistryMcpRelay = async (
             _tag: "ToolEnd", id: toolCallId,
             status: result.details.status === "success" ? "success" : "error",
             meta: null, diff: null, preview: result.details.preview,
-            output: result.content.map(({ text }) => text).join("\n"),
+            output: registryResultText(result),
             ...(result.details.fileChanges === undefined ? {} : { fileChanges: result.details.fileChanges })
           }))
           return { content: result.content, isError: result.details.status !== "success" }

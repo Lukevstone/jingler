@@ -95,9 +95,11 @@ test("Auto: a scratch folder the agent turns into a repo is adopted and survives
   await expect(row).toContainText("No repo", { timeout: 20_000 })
 
   await allowGates(window, async () => (await window.getByText("Added the origin remote.").count()) > 0)
-  await expect(row).toContainText("Clubsy", { timeout: 20_000 })
+  // The title echoes the prompt, so the row says "Clubsy" before adoption runs
+  // on Done; wait for the persisted checkout instead.
+  await expect.poll(() => sessionsAt(home)[0]?.repo, { timeout: 20_000 }).toBe("Clubsy")
+  await expect(row).toContainText("Clubsy")
   const session = sessionsAt(home)[0]!
-  expect(session.repo).toBe("Clubsy")
   const projects = JSON.parse(readFileSync(join(home, "jingler", "projects.json"), "utf8")) as ReadonlyArray<{ name: string; path: string }>
   expect(projects.some((p) => p.name === "Clubsy" && p.path === session.repoPath)).toBe(true)
   await first.app.close()

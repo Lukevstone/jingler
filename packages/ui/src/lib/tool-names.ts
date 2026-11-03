@@ -44,8 +44,25 @@ const CANONICAL_TOOL_NAMES: Readonly<Record<string, string>> = {
   "mcp__jingler-browser__type": "Type",
   "mcp__jingler-browser__read_text": "Read page",
   "mcp__jingler-browser__evaluate": "Evaluate",
-  "mcp__jingler-browser__wait_for_selector": "Wait for"
+  "mcp__jingler-browser__wait_for_selector": "Wait for",
+  "mcp__jingler-browser__hover": "Hover",
+  "mcp__jingler-browser__press_key": "Press key",
+  "mcp__jingler-browser__scroll": "Scroll",
+  "mcp__jingler-browser__select_option": "Select",
+  "mcp__jingler-browser__snapshot": "Snapshot",
+  "mcp__jingler-browser__get_url": "Page URL",
+  "mcp__jingler-browser__back": "Back",
+  "mcp__jingler-browser__reload": "Reload",
+  "mcp__jingler-browser__network_requests": "Network",
+  "mcp__jingler-browser__network_request_detail": "Request",
+  "mcp__jingler-browser__console_logs": "Console"
 }
+
+const BROWSER_TOOL_PREFIX = "mcp__jingler-browser__"
+
+/** The bare browser tool (`click`, `network_requests`…) for a `jingler-browser` id, else null. */
+export const browserToolOf = (name: string): string | null =>
+  name.startsWith(BROWSER_TOOL_PREFIX) ? name.slice(BROWSER_TOOL_PREFIX.length) : null
 
 /**
  * An unknown MCP tool still deserves a readable label: `mcp__linear__list_issues`

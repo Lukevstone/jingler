@@ -233,6 +233,15 @@ const callTool = (
     stopReason: "toolUse"
   })
 
+/** A tool result's first image block as `WxH`, read from the PNG header. */
+const pngDimensionsIn = (message: PiContext["messages"][number]): string | null => {
+  if (message.role !== "toolResult") return null
+  const image = message.content.find((block) => block.type === "image")
+  if (image?.type !== "image") return null
+  const png = Buffer.from(image.data, "base64")
+  return `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`
+}
+
 const browserUrlFrom = (context: PiContext): string => {
   const match = latestOperatorText(context).match(/\[\[browser-url=([^\]]+)\]\]/)
   return match?.[1] ?? "about:blank"
@@ -937,6 +946,55 @@ const responsesFor = (fixture: E2ePiFixture): ReadonlyArray<FauxResponseStep> =>
         }),
         fauxAssistantMessage("Browser workflow completed through pi.")
       ]
+    case "browser-debug":
+      return [
+        (context) => callTool("mcp__jingler-browser__navigate", { url: browserUrlFrom(context) }, "bd-nav"),
+        callTool("mcp__jingler-browser__click", { selector: "#go" }, "bd-click"),
+        callTool("mcp__jingler-browser__wait_for_selector", { selector: "#done" }, "bd-wait"),
+        callTool("mcp__jingler-browser__console_logs", {}, "bd-console"),
+        callTool("mcp__jingler-browser__network_requests", { onlyFailed: true }, "bd-network"),
+        (context) => {
+          const results = context.messages
+            .filter((message) => message.role === "toolResult")
+            .slice(-2)
+            .map((message) => toolResultText(message))
+            .join("\n")
+          return fauxAssistantMessage(`Browser debug results:\n${results}`)
+        }
+      ]
+    case "browser-ops": {
+      const base = (context: PiContext) => browserUrlFrom(context).replace(/\/$/u, "")
+      const b = (tool: string, input: Parameters<typeof fauxToolCall>[1], id: string) =>
+        callTool(`mcp__jingler-browser__${tool}`, input, id)
+      return [
+        (context) => b("navigate", { url: `${base(context)}/ops-tall` }, "bo-nav-tall"),
+        b("screenshot", { fullPage: true }, "bo-shot-full"),
+        (context) => b("navigate", { url: `${base(context)}/ops-a` }, "bo-nav-a"),
+        b("hover", { selector: "#menu" }, "bo-hover"),
+        b("type", { selector: "#q", text: "hello" }, "bo-type"),
+        b("press_key", { key: "Enter", selector: "#q" }, "bo-key"),
+        b("select_option", { selector: "#pick", value: "Second" }, "bo-select"),
+        b("evaluate", { expression: "document.getElementById('log').textContent" }, "bo-log"),
+        b("snapshot", {}, "bo-snapshot"),
+        b("screenshot", { selector: "#menu" }, "bo-shot-el"),
+        (context) => b("navigate", { url: `${base(context)}/ops-b` }, "bo-nav-b"),
+        b("back", {}, "bo-back"),
+        b("get_url", {}, "bo-url"),
+        b("reload", {}, "bo-reload"),
+        b("evaluate", { expression: "window.loadId" }, "bo-load-id"),
+        (context) => {
+          const lines = context.messages
+            .filter((message) => message.role === "toolResult" && message.toolCallId.startsWith("bo-"))
+            .map((message) => {
+              if (message.role !== "toolResult") return ""
+              const text = toolResultText(message)
+              const dims = pngDimensionsIn(message)
+              return `${message.toolCallId}:${dims ? ` image ${dims}` : ` ${text}`}`
+            })
+          return fauxAssistantMessage(`Browser ops results:\n${lines.join("\n")}`)
+        }
+      ]
+    }
     case "mcp-needs-auth":
       return [
         fauxAssistantMessage(fauxToolCall("mcp__runpod__list_pods", {}), { stopReason: "toolUse" }),

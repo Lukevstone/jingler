@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { browserWebSearchPort, routeWebSearch } from "./web-search.js"
 import { WebSearchError } from "@jingler/core"
 import { searchWithProvider } from "./web-search-providers.js"
+import { stubBrowserSessionPort } from "./browser-control-port.stub.js"
 
 const signal = () => new AbortController().signal
 
@@ -74,15 +75,7 @@ describe("WebSearch target routing", () => {
       finishNavigate = resolve
     }))
     const evaluate = vi.fn(async () => ({ result: "[]" }))
-    const pending = browserWebSearchPort({
-      navigate,
-      evaluate,
-      screenshot: vi.fn(),
-      click: vi.fn(),
-      type: vi.fn(),
-      readText: vi.fn(),
-      waitForSelector: vi.fn()
-    }).search(query, controller.signal)
+    const pending = browserWebSearchPort(stubBrowserSessionPort({ navigate, evaluate })).search(query, controller.signal)
     controller.abort()
     await expect(pending).rejects.toMatchObject({ reason: "cancelled" })
     finishNavigate?.()

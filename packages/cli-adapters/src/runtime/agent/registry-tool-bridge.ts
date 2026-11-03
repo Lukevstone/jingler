@@ -3,10 +3,23 @@ import { Effect, Option, Schema } from "effect"
 import type { ToolExecutionRequest, ToolRegistry, ToolResultEnvelope } from "../tools/tool-registry.js"
 import type { AgentRuntimeContext } from "./agent-runtime.js"
 
+export type RegistryToolContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+
 export interface RegistryToolResult {
-  readonly content: Array<{ type: "text"; text: string }>
+  readonly content: Array<RegistryToolContent>
   readonly details: ToolResultEnvelope
 }
+
+/** The text blocks of a result, for callers that only log or publish text. */
+export const registryResultText = (result: RegistryToolResult): string =>
+  result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n")
+
+const contentOf = (result: ToolResultEnvelope): Array<RegistryToolContent> => [
+  { type: "text", text: renderResult(result) },
+  ...(result.images ?? []).map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType }))
+]
 
 /** `command_execute`'s result value; its output reads as text, not JSON. */
 const CommandResult = Schema.Struct({
@@ -105,7 +118,7 @@ const execute = async (
     return { content: [{ type: "text", text: renderResult(denied) }], details: denied }
   }
   const result = await Effect.runPromise(registry.execute(request))
-  return { content: [{ type: "text", text: renderResult(result) }], details: result }
+  return { content: contentOf(result), details: result }
 }
 
 // A registry owns one mutation observer/journal; parallel snapshots would corrupt receipts.

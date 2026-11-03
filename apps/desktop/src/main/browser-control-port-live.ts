@@ -21,7 +21,19 @@ export const BrowserControlPortLive = Layer.effect(
     return BrowserControlPort.of({
       forAgent: (sessionId, chatId) => ({
         navigate: (url) => Effect.runPromise(preview.controlNavigate(sessionId, chatId, url)),
-        screenshot: () => Effect.runPromise(preview.controlScreenshot(sessionId, chatId)),
+        screenshot: (options) => Effect.runPromise(preview.controlScreenshot(sessionId, chatId, options)),
+        hover: (selector) => Effect.runPromise(preview.controlHover(sessionId, chatId, selector)),
+        pressKey: (key, selector) => Effect.runPromise(preview.controlPressKey(sessionId, chatId, key, selector)),
+        scroll: (options) => Effect.runPromise(preview.controlScroll(sessionId, chatId, options)),
+        selectOption: (selector, value) =>
+          Effect.runPromise(preview.controlSelectOption(sessionId, chatId, selector, value)),
+        pageInfo: () => Effect.runPromise(preview.controlPageInfo(sessionId, chatId)),
+        goBack: () => Effect.runPromise(preview.controlGoBack(sessionId, chatId)),
+        reload: () => Effect.runPromise(preview.controlReload(sessionId, chatId)),
+        snapshot: () => Effect.runPromise(preview.controlSnapshot(sessionId, chatId)),
+        networkRequests: (filter) => Effect.runPromise(preview.controlNetworkRequests(sessionId, chatId, filter)),
+        networkRequestDetail: (id) => Effect.runPromise(preview.controlNetworkRequestDetail(sessionId, chatId, id)),
+        consoleLogs: (filter) => Effect.runPromise(preview.controlConsoleLogs(sessionId, chatId, filter)),
         click: (selector) => Effect.runPromise(preview.controlClick(sessionId, chatId, selector)),
         type: (selector, text) =>
           Effect.runPromise(preview.controlType(sessionId, chatId, selector, text)),
