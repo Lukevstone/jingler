@@ -188,6 +188,8 @@ export interface PullRequestViewProps {
   onOpenFiles?: () => void
   /** This PR's own changed files; when set, the Files tab shows it in place instead of calling `onOpenFiles`. */
   filesPanel?: ReactNode
+  /** Extra check status (e.g. other checkouts' PRs), shown above this PR's checks on the Checks tab. */
+  checksPanel?: ReactNode
   onMerge?: (method: PrMergeMethod) => Promise<void> | void
   /** A merge is in flight — disables the button and shows a spinner. */
   merging?: boolean
@@ -298,6 +300,7 @@ function PullRequestViewBody({
   closeError,
   onOpenFiles,
   filesPanel,
+  checksPanel,
   onMerge,
   merging = false,
   mergeError,
@@ -405,7 +408,10 @@ function PullRequestViewBody({
            if (evidence === "commits") return (<CommitEvidence pr={pr} />)
            if (evidence === "files" && filesPanel) return filesPanel
 return (evidence === "checks" ? (
-            <CheckEvidence pr={pr} stack={stack} />
+            <>
+              {checksPanel}
+              <CheckEvidence pr={pr} stack={stack} />
+            </>
           ) : (
           <>
           {/*

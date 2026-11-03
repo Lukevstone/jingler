@@ -63,6 +63,13 @@ describe("PullRequestView evidence navigation", () => {
     expect(onOpenFiles).not.toHaveBeenCalled()
   })
 
+  it("shows the supplied checks panel only on the Checks tab, never over the conversation", () => {
+    render(<WidthTierValue width={1200}><PullRequestView pr={pr} connected checksPanel={<div>other-repo-checks</div>} /></WidthTierValue>)
+    expect(screen.queryByText("other-repo-checks")).toBeNull()
+    fireEvent.click(screen.getByRole("tab", { name: /^Checks/ }))
+    expect(screen.getByText("other-repo-checks")).toBeTruthy()
+  })
+
   it("marks only a failing check's state dot red, never its row or link", () => {
     const failing = { ...pr, checks: [{ name: "Lint", status: "fail" as const, detailsUrl: "https://ci.example/1", durationMs: 48000 }] }
     render(<WidthTierValue width={1200}><PullRequestView pr={failing} connected /></WidthTierValue>)

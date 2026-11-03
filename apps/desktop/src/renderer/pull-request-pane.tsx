@@ -95,7 +95,6 @@ export function PullRequestPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-    <CheckoutChecks session={session} />
     <PullRequestView
       pr={pr}
       connected={connected}
@@ -143,6 +142,7 @@ export function PullRequestPane({
       onReplyToThread={replyToThread}
       onOpenOnGithub={openOnGithub}
       onOpenFiles={onOpenFiles}
+      checksPanel={<CheckoutChecks session={session} />}
       filesPanel={<PrFilesPanel session={session} prNumber={stack.selected ?? activeCheckoutOf(session).prNumber} connected={connected} />}
       conflictedFiles={conflictedFiles}
       onResolveConflicts={resolveConflicts}
