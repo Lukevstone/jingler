@@ -52,7 +52,7 @@ export const startRegistryMcpRelay = async (
   const executions = new Set<Promise<unknown>>()
   let expectedHost = ""
   let closing: Promise<void> | undefined
-  const capabilities = input.registry.capabilitiesFor(input.spec.role, input.spec.mode)
+  const capabilities = input.registry.offeredCapabilitiesFor(input.spec.role, input.spec.mode, input.context.workModeHost !== undefined)
   const active = new Set(capabilities.map(({ id }) => id))
   const descriptors = capabilities.map(({ id, description }) => ({
     name: id,

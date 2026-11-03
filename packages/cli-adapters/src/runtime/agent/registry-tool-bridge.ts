@@ -64,11 +64,13 @@ const execute = async (
   const { registry, spec, context, id, toolCallId, parameters, signal, allowed, onUpdate, cwd } =
     input
   const risk = registry.riskFor(id)
+  // read-only runs never widen; everything else follows a mid-turn plan/build switch.
+  const mode = spec.mode === "read-only" ? spec.mode : context.liveMode?.() ?? spec.mode
   const request: ToolExecutionRequest = {
     id,
     arguments: parameters,
     role: spec.role,
-    mode: spec.mode,
+    mode,
     signal,
     callId: toolCallId,
     idempotencyKey: toolCallId,
@@ -91,7 +93,7 @@ const execute = async (
   }
   // Plan mode is enforced by the registry itself (see `allowed`), which
   // admits only reads and the path-checked plan writes; a gate would only prompt.
-  const requiresPermission = risk !== null && risk !== "read" && spec.mode !== "plan"
+  const requiresPermission = risk !== null && risk !== "read" && mode !== "plan"
   const permitted = requiresPermission
     ? await Effect.runPromise(
         context.canUseTool({ toolId: id, risk }),

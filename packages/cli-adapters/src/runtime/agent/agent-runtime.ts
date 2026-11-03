@@ -15,7 +15,8 @@ import type {
   SubagentFleetControlOutcome,
   SubagentFleetControlRequest,
   SubagentFleetSnapshot,
-  UsageFact
+  UsageFact,
+  RuntimeMode
 } from "@jingler/core"
 import type { CheckoutHost } from "../tools/checkout-tools.js"
 import type { WorkModeHost } from "./work-mode-tool.js"
@@ -86,6 +87,8 @@ export interface AgentRuntimeContext {
   readonly checkouts?: CheckoutHost
   /** Enables `jingler_set_work_mode`. */
   readonly workModeHost?: WorkModeHost
+  /** The chat's mode now; a mid-turn work-mode switch makes the turn's `spec.mode` stale. */
+  readonly liveMode?: () => RuntimeMode
 }
 
 export interface AgentRuntimeOwner {

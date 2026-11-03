@@ -142,6 +142,12 @@ describe("workspace inspection tools", () => {
     expect(() => validateInspectionCommand("git", ["-c", "alias.x=!touch marker", "x"])).toThrow("not read-only")
     expect(() => validateInspectionCommand("rg", ["needle"])).not.toThrow()
     expect(() => validateInspectionCommand("rg", ["--pre", "cat", "needle"])).toThrow("flag is unavailable")
+    for (const args of [["-A", "30", "needle"], ["-B3", "-C", "2", "needle"], ["-w", "-F", "-n", "needle"]]) {
+      expect(() => validateInspectionCommand("rg", args)).not.toThrow()
+    }
+    expect(() => validateInspectionCommand("rg", ["-A", "needle"])).toThrow("line count")
+    expect(() => validateInspectionCommand("rg", ["-A", "--pre=cat", "needle"])).toThrow("line count")
+    expect(() => validateInspectionCommand("rg", ["-A1000", "needle"])).toThrow("flag is unavailable")
     expect(() => validateInspectionCommand("rg", ["needle", "../outside"])).toThrow("outside")
   })
 
