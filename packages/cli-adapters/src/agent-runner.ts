@@ -1116,6 +1116,7 @@ export class AgentRunner extends Effect.Service<AgentRunner>()("@jingler/AgentRu
           const adapterRun = adapter.run(chatId, spec, {
             ...checkoutOption,
             ...workModeHost,
+            liveMode: () => Effect.runSync(liveModeFor(chatId, workMode, mode)),
             emit,
             recordUsage,
             canUseTool,

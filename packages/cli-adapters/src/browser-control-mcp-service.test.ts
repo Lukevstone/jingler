@@ -19,6 +19,7 @@ import {
   type BrowserControlPortShape,
   type BrowserControlSessionPortShape
 } from "./browser-control-port.js"
+import { stubBrowserSessionPort } from "./browser-control-port.stub.js"
 
 const loopbackDescribe =
   process.env.CODEX_SANDBOX_NETWORK_DISABLED === "1" ? describe.skip : describe
@@ -26,23 +27,10 @@ const loopbackIt = process.env.CODEX_SANDBOX_NETWORK_DISABLED === "1" ? it.skip 
 const BEARER_PREFIX = /^Bearer /
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
-const stubSessionPort = (
-  over: Partial<BrowserControlSessionPortShape> = {}
-): BrowserControlSessionPortShape => ({
-  navigate: async () => {},
-  screenshot: async () => ({ pngBase64: "AAAA" }),
-  click: async () => {},
-  type: async () => {},
-  readText: async () => ({ text: "" }),
-  evaluate: async () => ({ result: "" }),
-  waitForSelector: async () => {},
-  ...over
-})
-
 const stubPort = (
   over: Partial<BrowserControlSessionPortShape> = {}
 ): BrowserControlPortShape => ({
-  forAgent: () => stubSessionPort(over)
+  forAgent: () => stubBrowserSessionPort(over)
 })
 
 const runWithServiceEffect = <A>(
@@ -153,11 +141,22 @@ loopbackDescribe("BrowserControlMcpService authenticated loopback", () => {
           await client.connect(transport)
           const tools = await client.listTools()
           expect(tools.tools.map((tool) => tool.name).sort()).toStrictEqual([
+            "back",
             "click",
+            "console_logs",
             "evaluate",
+            "get_url",
+            "hover",
             "navigate",
+            "network_request_detail",
+            "network_requests",
+            "press_key",
             "read_text",
+            "reload",
             "screenshot",
+            "scroll",
+            "select_option",
+            "snapshot",
             "type",
             "wait_for_selector"
           ])
@@ -395,7 +394,7 @@ describe("BrowserControlMcpService scoped attachment", () => {
     const browser: BrowserControlPortShape = {
       forAgent: (sessionId) => {
         boundSessions.push(sessionId)
-        return stubSessionPort()
+        return stubBrowserSessionPort()
       }
     }
     let nextPort = 43_210
@@ -426,7 +425,7 @@ describe("BrowserControlMcpService scoped attachment", () => {
     const browser: BrowserControlPortShape = {
       forAgent: (sessionId, chatId) => {
         owners.push(`${sessionId}:${chatId}`)
-        return stubSessionPort()
+        return stubBrowserSessionPort()
       }
     }
     let port = 44_000
@@ -451,7 +450,7 @@ describe("BrowserControlMcpService scoped attachment", () => {
     const browser: BrowserControlPortShape = {
       forAgent: (sessionId) => {
         activeSession = sessionId
-        return stubSessionPort()
+        return stubBrowserSessionPort()
       }
     }
     const acquireListener: BrowserControlMcpListenerAcquirer = (_browser, authorization) => {

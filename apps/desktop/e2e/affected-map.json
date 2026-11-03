@@ -275,6 +275,8 @@
       "mcp-server-detail.spec.ts",
       "claude-mcp-inheritance.spec.ts",
       "browser-control-mcp.spec.ts",
+      "browser-debug-tools.spec.ts",
+      "browser-ops.spec.ts",
       "settings-pages.spec.ts"
     ]
   },
@@ -655,6 +657,20 @@
       "perf-monitor.spec.ts",
       "perf-bench.spec.ts",
       "multi-chat-perf.spec.ts"
+    ]
+  },
+  {
+    "paths": [
+      "apps/desktop/src/main/preview-view.ts",
+      "apps/desktop/src/main/browser-page-scripts.ts",
+      "apps/desktop/src/main/browser-recorder.ts",
+      "apps/desktop/src/main/browser-control-port-live.ts",
+      "packages/cli-adapters/src/browser-control-"
+    ],
+    "specs": [
+      "browser-control-mcp.spec.ts",
+      "browser-debug-tools.spec.ts",
+      "browser-ops.spec.ts"
     ]
   },
   {

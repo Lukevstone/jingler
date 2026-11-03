@@ -68,9 +68,16 @@ export interface ToolProviderInputSchema {
   readonly additionalProperties?: boolean
 }
 
+export interface ToolImage {
+  readonly data: string
+  readonly mimeType: string
+}
+
 export interface ToolResultEnvelope {
   readonly status: "success" | "error" | "cancelled"
   readonly value: unknown | null
+  /** Image blocks split out of the value; they are not counted against the text output budget. */
+  readonly images?: ReadonlyArray<ToolImage>
   readonly preview: string | null
   readonly artifact: ToolArtifactReference | null
   readonly error: { readonly code: ToolErrorCode; readonly message: string; readonly retryable: boolean } | null
@@ -206,6 +213,8 @@ const allowed = (tool: AnyToolDefinition, role: AgentRole, mode: RuntimeMode): b
   !(role === "review" && mutatingRisk(tool.risk)) &&
   !(mode === "read-only" && mutatingRisk(tool.risk)) &&
   (!isPlan(role, mode) || planAllows(tool))
+
+const SWITCHABLE_MODES = ["plan", "ask", "accept-edits", "auto"] as const
 
 const errorEnvelope = (error: ToolError): ToolResultEnvelope => ({
   status: error.code === "cancelled" ? "cancelled" : "error",
@@ -364,13 +373,34 @@ const successEnvelope = (value: unknown): ToolResultEnvelope => ({
   error: null
 })
 
+type ContentBlock = { readonly type?: unknown; readonly data?: unknown; readonly mimeType?: unknown }
+const isImageBlock = (block: ContentBlock): block is { type: "image"; data: string; mimeType: string } =>
+  block.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string"
+
+/**
+ * Split image blocks out of an MCP-shaped `{ content: [...] }` value. A
+ * screenshot's base64 dwarfs any text budget, and it belongs in the model's
+ * image input anyway, not stringified into its text. Exported for tests.
+ */
+export const splitImages = (value: unknown): { readonly value: unknown; readonly images: ReadonlyArray<ToolImage> } => {
+  const content = (value as { content?: unknown } | null)?.content
+  if (!Array.isArray(content)) return { value, images: [] }
+  const blocks = content as Array<ContentBlock>
+  const images = blocks.filter(isImageBlock).map(({ data, mimeType }) => ({ data, mimeType }))
+  if (images.length === 0) return { value, images }
+  return { value: { ...(value as object), content: blocks.filter((block) => !isImageBlock(block)) }, images }
+}
+
 const boundSuccessfulResult = async (
   options: ToolRegistryOptions,
   tool: AnyToolDefinition,
-  value: unknown
+  raw: unknown
 ): Promise<ToolResultEnvelope> => {
+  const { value, images } = splitImages(raw)
   const serialized = JSON.stringify(value) ?? "null"
-  if (serialized.length <= tool.outputBudget) return successEnvelope(value)
+  if (serialized.length <= tool.outputBudget) {
+    return images.length === 0 ? successEnvelope(value) : { ...successEnvelope(value), images }
+  }
   if (!options.writeArtifact) {
     return errorEnvelope(new ToolError("artifact-required", "Tool output exceeded its budget"))
   }
@@ -493,6 +523,18 @@ export class ToolRegistry {
   capabilitiesFor(role: AgentRole, mode: RuntimeMode): ReadonlyArray<PromptToolCapability> {
     return [...this.#tools.values()]
       .filter((tool) => allowed(tool, role, mode))
+      .map(({ id, version, description }) => ({ id, version, description }))
+  }
+
+  /**
+   * The tools a turn advertises. A chat that can switch plan/build mid-turn is
+   * offered both lists, because no harness reliably refreshes its tool list
+   * mid-turn; `allowed` re-checks the live mode on every call.
+   */
+  offeredCapabilitiesFor(role: AgentRole, mode: RuntimeMode, switchable: boolean): ReadonlyArray<PromptToolCapability> {
+    if (!switchable || role === "plan" || mode === "read-only") return this.capabilitiesFor(role, mode)
+    return [...this.#tools.values()]
+      .filter((tool) => SWITCHABLE_MODES.some((reachable) => allowed(tool, role, reachable)))
       .map(({ id, version, description }) => ({ id, version, description }))
   }
 

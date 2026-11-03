@@ -187,7 +187,7 @@ export const makeOpenCodeAgentRuntime = (options?: OpenCodeRuntimeOptions): Agen
         type: "remote", url: attachment.url, headers: { ...attachment.headers }, oauth: false, timeout: INTERACTIVE_TOOL_TIMEOUT_MS
       } }, { throwOnError: true, signal: abort.signal })
       if (connected.data.jingler?.status !== "connected") throw new Error("Jingler tool relay did not connect")
-      const relayTools = new Set(prepared.registry.capabilitiesFor(spec.role, spec.mode).map(({ id }) => `jingler_${id}`))
+      const relayTools = new Set(prepared.registry.offeredCapabilitiesFor(spec.role, spec.mode, context.workModeHost !== undefined).map(({ id }) => `jingler_${id}`))
       const { session, fresh } = await openOpenCodeSession(server, spec, directory, abort.signal, relayTools)
       id = session.id
       abort.signal.throwIfAborted()

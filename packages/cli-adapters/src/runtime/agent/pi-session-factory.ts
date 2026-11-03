@@ -326,11 +326,12 @@ const createResources = (
   spec: AgentRunSpec,
   registry: ToolRegistry | undefined,
   nativeSubagentsEnabled: boolean,
-  claudeArtifacts: boolean
+  claudeArtifacts: boolean,
+  switchable: boolean
 ) => {
   const runtimeSpec = spec
   const registryTools = [
-    ...(registry?.capabilitiesFor(runtimeSpec.role, runtimeSpec.mode) ?? []),
+    ...(registry?.offeredCapabilitiesFor(runtimeSpec.role, runtimeSpec.mode, switchable) ?? []),
     ...(nativeSubagentsEnabled ? NATIVE_SUBAGENT_TOOLS : []),
     ...(claudeArtifacts ? [claudeArtifactCapability] : [])
   ]
@@ -700,7 +701,8 @@ const createSessionHandle = (
       spec,
       registry,
       nativeSubagentsEnabled,
-      usesClaudeCli(connection) && claudeArtifactsAllowed(spec.role, spec.mode)
+      usesClaudeCli(connection) && claudeArtifactsAllowed(spec.role, spec.mode),
+      context.workModeHost !== undefined
     )
     const snapshot = tracker
       ? yield* tracker.capture(spec.cwd).pipe(

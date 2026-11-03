@@ -32,7 +32,9 @@ export function CollapsibleSection({
       onToggle={(event) => {
         if (event.currentTarget.open !== open) onOpenChange(event.currentTarget.open)
       }}
-      className={cn("group flex flex-col", className)}
+      // The native content slot is a plain block, so without this a child's
+      // h-full/flex-1 never receives the section's height and collapses to 0.
+      className={cn("group flex flex-col [&::details-content]:flex [&::details-content]:min-h-0 [&::details-content]:flex-1 [&::details-content]:flex-col", className)}
     >
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-wide text-dim outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <ChevronRight size={12} aria-hidden className="flex-none transition-transform group-open:rotate-90" />

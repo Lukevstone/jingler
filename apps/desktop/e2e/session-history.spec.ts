@@ -235,7 +235,10 @@ test("a session whose PR merged stays in the sidebar instead of auto-archiving",
   const { window, home } = await launchApp({
     configured: true,
     withRepo: true,
-    sessions: (ctx) => [{ ...session, worktreePath: ctx.repoPath }],
+    sessions: (ctx) => [
+      { ...session, worktreePath: ctx.repoPath },
+      { ...baseSession({ id: "s_other", title: "Other work", prNumber: null }), worktreePath: ctx.repoPath }
+    ],
     githubApp: {
       connected: true,
       userLogin: "morgan",
@@ -253,6 +256,9 @@ test("a session whose PR merged stays in the sidebar instead of auto-archiving",
   })
 
   await expect(sessionRow(window, "Multi PR session")).toBeVisible()
+  // The active row's PR is a header chip, not a row glyph (#964), so view another session.
+  await sessionRow(window, "Other work").click()
+  await expect(sessionRow(window, "Multi PR session")).not.toHaveAttribute("aria-current", "page")
 
   // Wait for the MERGED badge first. This is load-bearing: it proves the PR-state
   // poll actually completed. Asserting "not archived" without it passes trivially
@@ -260,13 +266,13 @@ test("a session whose PR merged stays in the sidebar instead of auto-archiving",
   // stay green even if auto-archiving were reinstated.
   // The row states merge state on its leading glyph now, not in text — `⑂ #7` is
   // the badge and the word lives in the glyph's title.
-  await expect(window.getByTitle("Pull request merged")).toBeVisible({ timeout: 20_000 })
+  await expect(sessionRow(window, "Multi PR session").getByTitle("Pull request merged")).toBeVisible({ timeout: 20_000 })
 
   // Now the interesting part: merged, and STILL an active session. With archived
   // hidden by default, "still listed" IS "still active".
   await expect(sessionRow(window, "Multi PR session")).toBeVisible()
   const persisted = JSON.parse(readFileSync(join(home, "jingler", "sessions.json"), "utf8"))
-  expect(persisted[0]?.archived ?? false).toBe(false)
+  expect(persisted.find((s: { id: string }) => s.id === "s_merged")?.archived ?? false).toBe(false)
 })
 
 test("the Archived group lists the most recently archived session first", async ({ launchApp }) => {

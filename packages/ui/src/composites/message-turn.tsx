@@ -31,6 +31,7 @@ import { ToolCall } from "./tool-call.js"
 import { StreamingText } from "./streaming-text.js"
 import { InlineError } from "../components/feedback.js"
 import { toolDisplayName } from "../lib/tool-names.js"
+import { browserToolIcon } from "../lib/browser-tool-icons.js"
 import { mcpToolAuthServer } from "../lib/mcp-tool-auth.js"
 
 // Parts fill the transcript's centered content column (width is owned by
@@ -332,6 +333,7 @@ const ToolCardView = memo(function ToolCardView({ tool }: { tool: ToolCallModel 
                               return (<ToolCall
       status={tool.status}
       name={displayName}
+      icon={browserToolIcon(tool.name, tool.status === "running")}
       target={tool.intent ?? tool.target ?? undefined}
       detail={tool.intent ? (tool.target ?? undefined) : undefined}
       filePath={path}

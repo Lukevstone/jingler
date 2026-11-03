@@ -980,11 +980,28 @@ test("a merged PR badges its linked session but never archives it", async ({ lau
         worktreePath: repoPath,
         baseBranch: "main"
         // NOT archived — and it must STAY that way despite PR #500 being merged.
+      },
+      {
+        id: "s_other",
+        repo: "widget",
+        branch: "chore/other",
+        title: "Other work",
+        status: "idle",
+        diff: { added: 0, removed: 0 },
+        prNumber: null,
+        costUsd: 0,
+        tokens: 0,
+        updatedAt: "2026-07-10T00:00:00.000Z",
+        worktreePath: repoPath,
+        baseBranch: "main"
       }
     ]
   })
 
   await expect(appShell(window)).toBeVisible()
+  // The active row's PR is a header chip, not a row glyph (#964), so view another session.
+  await sessionRow(window, "Other work").click()
+  await expect(sessionRow(window, "Old shipped work")).not.toHaveAttribute("aria-current", "page")
 
   // Waiting on the merge signal is what proves the PR-state poll actually ran —
   // without it, "was not archived" would pass trivially by asserting before the

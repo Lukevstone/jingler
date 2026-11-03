@@ -64,7 +64,11 @@ const GIT_INSPECTION_FLAGS: Record<string, readonly string[]> = {
   show: ["--stat", "--name-only", "--oneline", "--no-ext-diff", "--no-textconv"],
   status: ["--short", "--branch", "--porcelain", "--porcelain=v1", "--porcelain=v2", "-s", "-b", "-z"]
 }
-const RG_FLAGS = new Set(["-i", "-l", "-n"])
+const RG_FLAGS = new Set(["-i", "-l", "-n", "-w", "-F"])
+// Context lines, as `-A 3` or `-A3`; rg runs as `git grep`, which takes the same spelling.
+const RG_CONTEXT_FLAGS = new Set(["-A", "-B", "-C"])
+const RG_CONTEXT_COUNT = /^[0-9]{1,3}$/
+const RG_CONTEXT_JOINED = /^-[ABC][0-9]{1,3}$/
 
 const invalidInspectionArgument = (argument: string): boolean =>
   argument.includes("\0") ||
@@ -259,7 +263,12 @@ function validateRipgrepArguments(args: readonly string[]) {
   let queryCount = 0
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!
-    if (RG_FLAGS.has(argument)) continue
+    if (RG_FLAGS.has(argument) || RG_CONTEXT_JOINED.test(argument)) continue
+    if (RG_CONTEXT_FLAGS.has(argument)) {
+      if (!RG_CONTEXT_COUNT.test(args[index + 1] ?? "")) throw new ToolError("invalid-input", `${argument} needs a line count`)
+      index += 1
+      continue
+    }
     if (argument.startsWith("-")) {
       throw new ToolError("forbidden", `rg flag is unavailable: ${argument}`)
     }

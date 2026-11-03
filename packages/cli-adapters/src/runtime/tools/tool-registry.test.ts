@@ -95,6 +95,24 @@ describe("ToolRegistry", () => {
     expect(result.preview?.length).toBeLessThanOrEqual(8)
   })
 
+  it("splits image blocks out so they skip the text budget", async () => {
+    const registry = new ToolRegistry()
+    const data = "A".repeat(50_000)
+    registry.register(definition({
+      outputBudget: 200,
+      execute: async () => ({ content: [{ type: "image", data, mimeType: "image/png" }, { type: "text", text: "cut" }] })
+    }))
+    const result = await Effect.runPromise(registry.execute({
+      id: "workspace_read",
+      arguments: { path: "README.md" },
+      role: "conversation",
+      mode: "ask"
+    }))
+    expect(result.status).toBe("success")
+    expect(result.images).toStrictEqual([{ data, mimeType: "image/png" }])
+    expect(result.value).toStrictEqual({ content: [{ type: "text", text: "cut" }] })
+  })
+
   it("publishes only settled successful values that fit the output budget", async () => {
     const onSuccessfulResult = vi.fn()
     const registry = new ToolRegistry({
@@ -219,4 +237,24 @@ it("denies shell, delegation and external tools before execution in safe mode", 
       expect(result.error?.code).toBe("forbidden"); expect(execute).not.toHaveBeenCalled()
     }
   } finally { resetWorkspaceAdmissions() }
+})
+
+describe("offered capabilities", () => {
+  const registry = new ToolRegistry()
+  const tool = (id: string, risk: "read" | "mutate", modes: ReadonlyArray<"plan" | "auto" | "read-only">) => registry.register({
+    id, version: "1", description: id, input: Schema.Struct({}), risk,
+    roles: ["conversation"], modes, timeoutMs: 1_000, outputBudget: 1_000,
+    cancellable: false, idempotency: "safe", execute: async () => null
+  })
+  tool("workspace_read_file", "read", ["plan", "auto", "read-only"])
+  tool("workspace_delete", "mutate", ["auto"])
+
+  it("widens a switchable chat to both plan and build tools", () => {
+    expect(registry.offeredCapabilitiesFor("conversation", "plan", true).map(({ id }) => id)).toEqual(["workspace_read_file", "workspace_delete"])
+    expect(registry.offeredCapabilitiesFor("conversation", "plan", false).map(({ id }) => id)).toEqual(["workspace_read_file"])
+  })
+
+  it("never widens a read-only run", () => {
+    expect(registry.offeredCapabilitiesFor("conversation", "read-only", true).map(({ id }) => id)).toEqual(["workspace_read_file"])
+  })
 })

@@ -38,7 +38,8 @@ const runtimeContext = (spec: AgentTurnSpec, context: AgentContext) => ({
   listPeerAgents: context.listPeerAgents,
   messagePeerAgent: context.messagePeerAgent,
   ...(context.checkouts === undefined ? {} : { checkouts: context.checkouts }),
-  ...(context.workModeHost === undefined ? {} : { workModeHost: context.workModeHost })
+  ...(context.workModeHost === undefined ? {} : { workModeHost: context.workModeHost }),
+  ...(context.liveMode === undefined ? {} : { liveMode: context.liveMode })
 })
 
 const piSpec = (runId: string, spec: AgentTurnSpec) => {

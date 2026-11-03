@@ -3,10 +3,23 @@ import { Effect, Option, Schema } from "effect"
 import type { ToolExecutionRequest, ToolRegistry, ToolResultEnvelope } from "../tools/tool-registry.js"
 import type { AgentRuntimeContext } from "./agent-runtime.js"
 
+export type RegistryToolContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+
 export interface RegistryToolResult {
-  readonly content: Array<{ type: "text"; text: string }>
+  readonly content: Array<RegistryToolContent>
   readonly details: ToolResultEnvelope
 }
+
+/** The text blocks of a result, for callers that only log or publish text. */
+export const registryResultText = (result: RegistryToolResult): string =>
+  result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n")
+
+const contentOf = (result: ToolResultEnvelope): Array<RegistryToolContent> => [
+  { type: "text", text: renderResult(result) },
+  ...(result.images ?? []).map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType }))
+]
 
 /** `command_execute`'s result value; its output reads as text, not JSON. */
 const CommandResult = Schema.Struct({
@@ -64,11 +77,13 @@ const execute = async (
   const { registry, spec, context, id, toolCallId, parameters, signal, allowed, onUpdate, cwd } =
     input
   const risk = registry.riskFor(id)
+  // read-only runs never widen; everything else follows a mid-turn plan/build switch.
+  const mode = spec.mode === "read-only" ? spec.mode : context.liveMode?.() ?? spec.mode
   const request: ToolExecutionRequest = {
     id,
     arguments: parameters,
     role: spec.role,
-    mode: spec.mode,
+    mode,
     signal,
     callId: toolCallId,
     idempotencyKey: toolCallId,
@@ -91,7 +106,7 @@ const execute = async (
   }
   // Plan mode is enforced by the registry itself (see `allowed`), which
   // admits only reads and the path-checked plan writes; a gate would only prompt.
-  const requiresPermission = risk !== null && risk !== "read" && spec.mode !== "plan"
+  const requiresPermission = risk !== null && risk !== "read" && mode !== "plan"
   const permitted = requiresPermission
     ? await Effect.runPromise(
         context.canUseTool({ toolId: id, risk }),
@@ -103,7 +118,7 @@ const execute = async (
     return { content: [{ type: "text", text: renderResult(denied) }], details: denied }
   }
   const result = await Effect.runPromise(registry.execute(request))
-  return { content: [{ type: "text", text: renderResult(result) }], details: result }
+  return { content: contentOf(result), details: result }
 }
 
 // A registry owns one mutation observer/journal; parallel snapshots would corrupt receipts.

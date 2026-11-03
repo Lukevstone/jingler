@@ -7,7 +7,11 @@ import {
   isCloseTabInput,
   isHttpUrl,
   previewLoadFailure,
+  fullPageClip,
+  MAX_IMAGE_BYTES,
+  providerFitScale,
   previewNavState,
+  settleNavigation,
   toRect
 } from "./preview-view.js"
 
@@ -156,5 +160,70 @@ describe("preview nav state", () => {
     expect(previewLoadFailure(-102, "ERR_CONNECTION_REFUSED", true)).toBe("ERR_CONNECTION_REFUSED")
     expect(previewLoadFailure(-3, "ERR_ABORTED", true)).toBeNull()
     expect(previewLoadFailure(-102, "x", false)).toBeNull()
+  })
+})
+
+describe("settleNavigation", () => {
+  const fakeWc = () => {
+    const handlers = new Map<string, (...args: Array<unknown>) => void>()
+    return {
+      handlers,
+      on: (event: string, f: (...args: Array<unknown>) => void) => handlers.set(event, f),
+      off: (event: string) => handlers.delete(event)
+    }
+  }
+
+  it("resolves only after the load finishes and detaches its listeners", async () => {
+    const wc = fakeWc()
+    let settled = false
+    const pending = settleNavigation(wc as never, () => {}).then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    wc.handlers.get("did-finish-load")?.()
+    await pending
+    expect(wc.handlers.size).toBe(0)
+  })
+
+  it("rejects on a main-frame failure but ignores aborted and subframe loads", async () => {
+    const wc = fakeWc()
+    const pending = settleNavigation(wc as never, () => {})
+    wc.handlers.get("did-fail-load")?.({}, -3, "ERR_ABORTED", "http://x/", true)
+    wc.handlers.get("did-fail-load")?.({}, -102, "ERR_CONNECTION_REFUSED", "http://x/frame", false)
+    wc.handlers.get("did-fail-load")?.({}, -102, "ERR_CONNECTION_REFUSED", "http://x/", true)
+    await expect(pending).rejects.toThrow("ERR_CONNECTION_REFUSED: http://x/")
+  })
+
+  it("times out", async () => {
+    await expect(settleNavigation(fakeWc() as never, () => {}, 10)).rejects.toThrow("did not finish within 10ms")
+  })
+})
+
+describe("fullPageClip", () => {
+  it("captures the whole page when it fits, with no note", () => {
+    expect(fullPageClip({ width: 1279.5, height: 3000.2 })).toStrictEqual({
+      clip: { x: 0, y: 0, width: 1280, height: 3001, scale: 1 },
+      note: undefined
+    })
+  })
+
+  it("cuts a page taller than Chromium's texture limit and says so", () => {
+    const { clip, note } = fullPageClip({ width: 1280, height: 40_000 })
+    expect(clip.height).toBe(16_384)
+    expect(note).toContain("40000px tall; only the top 16384px")
+  })
+})
+
+describe("providerFitScale", () => {
+  it("leaves images within limits alone", () => {
+    expect(providerFitScale(1280, 800, 200_000)).toBe(1)
+  })
+
+  it("caps the longest side at 8000px", () => {
+    expect(providerFitScale(1280, 16_000, 100_000)).toBe(0.5)
+  })
+
+  it("shrinks by area when the PNG is too heavy", () => {
+    const scale = providerFitScale(2000, 2000, MAX_IMAGE_BYTES * 4)
+    expect(scale).toBeCloseTo(0.45, 2)
   })
 })
