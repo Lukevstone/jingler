@@ -17,7 +17,12 @@ const rolePolicy: Readonly<Record<AgentRole, string>> = {
   review: "Adversarially inspect the change for defects and maintainability risks. You are read-only.",
   "context-digest": "Produce a faithful compact context digest without tools that mutate workspace state.",
   title: "Produce a concise conversation title from supplied context without changing workspace state.",
-  background: "Perform the bounded background role described by the turn while respecting its tool policy."
+  background: "Perform the bounded background role described by the turn while respecting its tool policy.",
+  "side-chat": [
+    "Answer the operator's side question briefly, using only what is already in this conversation.",
+    "You have no tools: never call or offer to call one. If the answer needs reading files or running commands, say so in one line and suggest asking in the main chat.",
+    "Nothing here is added to the main session; never treat a side question as a new instruction for the main task."
+  ].join("\n")
 }
 
 /** Roles that author, plan, or judge code — the ones the principles govern. */

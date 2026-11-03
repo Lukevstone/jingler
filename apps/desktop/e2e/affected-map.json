@@ -1,6 +1,9 @@
 [
   {
-    "paths": ["apps/server/", ".github/"],
+    "paths": [
+      "apps/server/",
+      ".github/"
+    ],
     "specs": []
   },
   {
@@ -11,7 +14,12 @@
       "apps/desktop/src/main/terminal",
       "packages/cli-adapters/src/terminal"
     ],
-    "specs": ["terminal.spec.ts", "editor-groups.spec.ts", "workspace-terminal-archive.spec.ts", "agent-command-terminal.spec.ts"]
+    "specs": [
+      "terminal.spec.ts",
+      "editor-groups.spec.ts",
+      "workspace-terminal-archive.spec.ts",
+      "agent-command-terminal.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -20,7 +28,9 @@
       "packages/ui/src/components/beui/tool-result.tsx",
       "packages/ui/src/composites/message-turn.tsx"
     ],
-    "specs": ["agent-command-terminal.spec.ts"]
+    "specs": [
+      "agent-command-terminal.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -60,7 +70,11 @@
       "apps/desktop/scripts/materialize-plannotator-ext.mjs",
       "packages/cli-adapters/src/plannotator-"
     ],
-    "specs": ["plan-mode.spec.ts", "rich-plan-scratchpad.spec.ts", "plan-tools-any-mode.spec.ts"]
+    "specs": [
+      "plan-mode.spec.ts",
+      "rich-plan-scratchpad.spec.ts",
+      "plan-tools-any-mode.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -185,7 +199,11 @@
       "apps/desktop/src/main/usage",
       "packages/cli-adapters/src/usage"
     ],
-    "specs": ["usage.spec.ts", "usage-kpis.spec.ts", "claude-enterprise-usage.spec.ts"]
+    "specs": [
+      "usage.spec.ts",
+      "usage-kpis.spec.ts",
+      "claude-enterprise-usage.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -202,7 +220,11 @@
       "packages/core/src/auth.ts",
       "packages/cli-adapters/src/auth.ts"
     ],
-    "specs": ["auth.spec.ts", "better-auth-account.spec.ts", "onboarding.spec.ts"]
+    "specs": [
+      "auth.spec.ts",
+      "better-auth-account.spec.ts",
+      "onboarding.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -538,7 +560,11 @@
       "apps/desktop/src/main/obsidian-explanations.ts",
       "plugins/obsidian/"
     ],
-    "specs": ["explanation.spec.ts", "architecture-figure.spec.ts", "obsidian-plugin.spec.ts"]
+    "specs": [
+      "explanation.spec.ts",
+      "architecture-figure.spec.ts",
+      "obsidian-plugin.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -552,7 +578,12 @@
       "apps/desktop/scripts/build-bundled-plugins.mjs",
       "apps/desktop/scripts/bundled-plugin-ids.mjs"
     ],
-    "specs": ["plugins.spec.ts", "linear-plugin.spec.ts", "obsidian-plugin.spec.ts", "github-issues-inbox.spec.ts"]
+    "specs": [
+      "plugins.spec.ts",
+      "linear-plugin.spec.ts",
+      "obsidian-plugin.spec.ts",
+      "github-issues-inbox.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -564,7 +595,10 @@
       "apps/desktop/src/renderer/use-native-view-bounds.ts",
       "apps/desktop/src/main/preview-view.ts"
     ],
-    "specs": ["previews.spec.ts", "claude-artifacts.spec.ts"]
+    "specs": [
+      "previews.spec.ts",
+      "claude-artifacts.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -572,7 +606,9 @@
       "packages/ui/src/asset/open-asset-context.tsx",
       "apps/desktop/src/renderer/conversation-pane.tsx"
     ],
-    "specs": ["claude-artifacts.spec.ts"]
+    "specs": [
+      "claude-artifacts.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -580,7 +616,9 @@
       "apps/desktop/src/renderer/use-background-tasks.ts",
       "packages/core/src/background-task-machine.ts"
     ],
-    "specs": ["background-tasks.spec.ts"]
+    "specs": [
+      "background-tasks.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -591,7 +629,9 @@
       "apps/desktop/src/renderer/use-auto-update.ts",
       "apps/desktop/src/main/updater.ts"
     ],
-    "specs": ["release-notes.spec.ts"]
+    "specs": [
+      "release-notes.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -599,7 +639,11 @@
       "apps/desktop/src/renderer/notifier.ts",
       "apps/desktop/src/main/notifications.ts"
     ],
-    "specs": ["toasts.spec.ts", "notification-question.spec.ts", "needs-you.spec.ts"]
+    "specs": [
+      "toasts.spec.ts",
+      "notification-question.spec.ts",
+      "needs-you.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -609,7 +653,11 @@
       "apps/desktop/src/renderer/runtime-inspector-machine.ts",
       "apps/desktop/src/main/resource-pressure.ts"
     ],
-    "specs": ["perf-monitor.spec.ts", "perf-bench.spec.ts", "multi-chat-perf.spec.ts"]
+    "specs": [
+      "perf-monitor.spec.ts",
+      "perf-bench.spec.ts",
+      "multi-chat-perf.spec.ts"
+    ]
   },
   {
     "paths": [
@@ -623,6 +671,20 @@
       "browser-control-mcp.spec.ts",
       "browser-debug-tools.spec.ts",
       "browser-ops.spec.ts"
+    ]
+  },
+  {
+    "paths": [
+      "apps/desktop/src/renderer/side-chat-",
+      "apps/desktop/src/renderer/use-side-chat.ts",
+      "packages/ui/src/composites/side-chat-panel",
+      "packages/cli-adapters/src/runtime/agent/read-only-role.ts",
+      "apps/desktop/src/main/e2e/pi-fixture.ts",
+      "packages/core/src/side-chat-support.ts",
+      "packages/cli-adapters/src/runtime/agent/shared-planning.ts"
+    ],
+    "specs": [
+      "side-chat.spec.ts"
     ]
   }
 ]

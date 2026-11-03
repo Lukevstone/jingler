@@ -24,7 +24,9 @@ export const AgentRole = Schema.Literal(
   "review",
   "context-digest",
   "title",
-  "background"
+  "background",
+  /** Forked, tool-less, unpersisted Q&A about a chat ("/btw"). */
+  "side-chat"
 )
 export type AgentRole = Schema.Schema.Type<typeof AgentRole>
 

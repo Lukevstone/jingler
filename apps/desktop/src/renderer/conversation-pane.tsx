@@ -30,7 +30,9 @@ import {
   clampFontScale,
   countNodesAwaitingAttention,
   piEndpointId,
-  plannotatorProjectionToPlanDocument
+  plannotatorProjectionToPlanDocument,
+  sideChatQuestion,
+  sideChatSupport
 } from "@jingler/core"
 import {
   AttachmentSourceProvider,
@@ -54,6 +56,8 @@ import {
   ProviderAccountChoice,
   ProviderConnectSheet,
   PlanReview,
+  SideChatPanel,
+  SideChatToggleButton,
   useContainerWidth,
   OPEN_THREAD_SWITCHER_EVENT
 } from "@jingler/ui"
@@ -62,6 +66,7 @@ import { clearMcpRecoveryDismissal, dismissMcpRecovery, isMcpRecoveryDismissed, 
 import { handoffEachQueued } from "./handoff-each-queued.js"
 import { PlanReviewerDisconnectedCard } from "./plan-reviewer-disconnected-card.js"
 import { rpc } from "./rpc-client.js"
+import { useSideChat } from "./use-side-chat.js"
 import { useConnectivity } from "./connectivity.js"
 import { DeviceOfflineBanner } from "@jingler/ui"
 import { clearInterruptedChat, useInterruptedChats } from "./interrupted-chats.js"
@@ -231,6 +236,30 @@ function McpRecoveryCards({
         />
       )}
     </>
+  )
+}
+
+type SideChat = ReturnType<typeof useSideChat>
+
+/** Hidden wherever the backend would refuse: the same rule `SideChat.ask` applies. */
+function SideChatToggle({ session, chat, sideChat }: { session: Session; chat: Session["chats"][number]; sideChat: SideChat }) {
+  if (!sideChatSupport(session, chat.id).ok) return null
+  return <SideChatToggleButton active={sideChat.open} onClick={sideChat.toggle} className="absolute right-3 top-2 z-10" />
+}
+
+function SideChatDock({ sideChat }: { sideChat: SideChat }) {
+  if (!sideChat.open) return null
+  return (
+    <SideChatPanel
+      messages={sideChat.messages}
+      busy={sideChat.busy}
+      error={sideChat.error}
+      expanded={sideChat.expanded}
+      onAsk={sideChat.ask}
+      onClose={sideChat.close}
+      onToggleExpand={sideChat.toggleExpand}
+      className={sideChat.expanded ? "w-[min(640px,60%)] flex-none" : "w-[360px] flex-none"}
+    />
   )
 }
 
@@ -535,6 +564,7 @@ export function ConversationPane({
   paneFocused?: boolean
 }) {
   const activeChat = activeChatFor(session)
+  const sideChat = useSideChat(session.id, activeChat.id)
   const watchTool = useMemo(
     () => onOpenTerminal
       ? (tool: ToolCall) => onOpenTerminal(watchAgentCommand(session.id, activeChat.id, tool.id, tool.target ?? tool.name))
@@ -810,6 +840,15 @@ export function ConversationPane({
   const pendingReviewId = plannotatorReviewId(convo.plannotator)
   const { offline, waiting, setWaiting, hold } = useOfflineSendQueue(convo.sendPrompt)
   const sendPrompt: typeof convo.sendPrompt = (text, images) => {
+    const btw = sideChatQuestion(text)
+    if (btw !== null) {
+      // Never falls through to the main thread: a side question must not enter the session.
+      clearDraft(activeChat.id)
+      const support = sideChatSupport(session, activeChat.id)
+      if (support.ok) sideChat.askFromComposer(btw)
+      else onPushToast?.({ key: `side-chat-${session.id}`, variant: "error", title: support.reason })
+      return
+    }
     // Structured ranges stay out of the editable textarea, but every harness
     // receives the same deterministic plain-text context at the turn boundary.
     // Read the store now rather than using the render snapshot: Files can append
@@ -1149,7 +1188,8 @@ export function ConversationPane({
         the strip's own `overflow-x-auto` take over. The inner column already had
         it; this outer row did not, so the constraint stopped one level short. */}
     <div ref={planSplitRowRef} className="flex min-h-0 min-w-0 flex-1" style={{ "--sb-font-scale": fontScale } as CSSProperties}>
-      <div ref={mainColumnRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div ref={mainColumnRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <SideChatToggle session={session} chat={activeChat} sideChat={sideChat} />
       {offlineDevice && <DeviceOfflineBanner device={offlineDevice.name} onContinueLocally={offlineDevice.continueLocally} />}
       {renderEnvironmentNotices({
               convo,
@@ -1333,6 +1373,7 @@ export function ConversationPane({
           </div>
         </>
       )}
+      <SideChatDock sideChat={sideChat} />
     </div>
     </AttachmentSourceProvider>
     </OpenAssetProvider>

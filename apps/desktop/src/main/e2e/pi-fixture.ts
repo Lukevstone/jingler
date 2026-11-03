@@ -831,6 +831,11 @@ const defaultResponse = (context: PiContext): ReturnType<typeof fauxAssistantMes
       "```"
     ].join("\n"))
   }
+  if (prompt.includes("[[side-chat]]")) {
+    // Side chats replay their own thread in a seeded custom entry, so a follow-up can count earlier questions.
+    const asked = context.messages.filter((message) => JSON.stringify(message).includes("[[side-chat]]")).length
+    return fauxAssistantMessage(`Side answer #${asked}`)
+  }
   if (prompt.includes("[[expect-code-context]]")) {
     return fauxAssistantMessage(
       prompt.includes("<repository-code-references>")

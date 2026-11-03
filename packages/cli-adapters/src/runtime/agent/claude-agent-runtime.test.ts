@@ -114,6 +114,45 @@ describe("ClaudeAgentRuntime", () => {
       .toEqual(["--effort", "max"])
   })
 
+  it("forks side chats into an unpersisted, tool-less session with no relay", () => {
+    const continuation = { runtimeId: "claude" as const, endpointId, id: "main-session" }
+    const args = claudeAgentArguments(spec({ role: "side-chat", mode: "read-only", continuation }), "s", "/tmp/relay/mcp.json")
+    expect(args.slice(args.indexOf("--resume"), args.indexOf("--resume") + 3)).toEqual(["--resume", "main-session", "--fork-session"])
+    expect(args).toContain("--no-session-persistence")
+    expect(args[args.indexOf("--tools") + 1]).toBe("")
+    expect(args).not.toContain("--mcp-config")
+    expect(args).not.toContain("--allowedTools")
+    const fresh = claudeAgentArguments(spec({ role: "side-chat", mode: "read-only" }), "s")
+    expect(fresh).not.toContain("--fork-session")
+    expect(fresh).toContain("--no-session-persistence")
+    expect(claudeAgentArguments(spec({ continuation }), "s")).not.toContain("--fork-session")
+  })
+
+  it("replays the side thread on a forked side-chat follow-up", async () => {
+    const binary = await executable(`
+let input=""; process.stdin.on("data",(chunk)=>input+=chunk); process.stdin.on("end",()=>{
+ const text=JSON.parse(input.trim()).message.content[0].text;
+ const ok=text.includes("earlier side question") && text.includes("follow-up");
+ console.log(JSON.stringify({type:"stream_event",event:{type:"content_block_delta",delta:{type:"text_delta",text:ok?"replayed":"missing"}}}));
+ console.log(JSON.stringify({type:"result",is_error:false,usage:{}}));
+});
+`)
+    const events = [...await Effect.runPromise(makeClaudeAgentRuntime({ binary }).run(spec({
+      role: "side-chat",
+      mode: "read-only",
+      prompt: "follow-up",
+      continuation: { runtimeId: "claude", endpointId, id: "main-session" },
+      priorMessages: [{
+        id: "side-1",
+        role: "user",
+        parts: [{ _tag: "Text", text: "earlier side question" }],
+        streaming: false,
+        createdAt: "2026-11-03T00:00:00.000Z"
+      }]
+    }), context).pipe(Stream.runCollect))]
+    expect(events).toContainEqual({ _tag: "Assistant", text: "replayed" })
+  })
+
   // Verified against Claude Code 2.1.286: without --strict-mcp-config the init
   // event lists the account's claude.ai connectors; with it the list is empty.
   // Imported connectors therefore reach Claude only through Jingler's relay

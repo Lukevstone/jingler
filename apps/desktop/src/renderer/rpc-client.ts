@@ -1249,6 +1249,27 @@ export const rpc = {
       if (fiber) coreRuntime.runFork(Fiber.interrupt(fiber))
     }
   },
+  /** Stream one side-chat answer (forked, tool-less, never persisted); returns the canceller. */
+  sideChatAsk: (
+    sessionId: string,
+    chatId: string,
+    thread: ReadonlyArray<Message>,
+    prompt: string,
+    onEvent: (event: StreamEvent) => void
+  ): (() => void) => {
+    let fiber: Fiber.RuntimeFiber<void, unknown> | null = null
+    let cancelled = false
+    void clientPromise.then((client) => {
+      if (cancelled) return
+      fiber = coreRuntime.runFork(
+        drainRun(client.SideChat.ask({ sessionId, chatId, thread, prompt }), onEvent)
+      )
+    })
+    return () => {
+      cancelled = true
+      if (fiber) coreRuntime.runFork(Fiber.interrupt(fiber))
+    }
+  },
   // ── Terminal ─────────────────────────────────────────────────────────────
   /** Spawn a PTY for a session (cwd defaults to its worktree) and return it. */
   terminalCreate: (
