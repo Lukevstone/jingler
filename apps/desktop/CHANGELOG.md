@@ -1,5 +1,13 @@
 # @jingler/desktop
 
+## 0.20.2
+
+### Patch Changes
+
+- e201446: Opening a pull request from the PRs dropdown no longer buries it under other repositories' checks. Those checks now live on the PR view's Checks tab, and still show above the create-PR screen when the active repository has no PR yet.
+- e201446: Side chat now docks to the right edge of the whole window instead of squeezing into the chat column.
+  - @jingler/plannotator-ext@0.20.2
+
 ## 0.20.1
 
 ### Patch Changes
