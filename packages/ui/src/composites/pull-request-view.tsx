@@ -188,6 +188,8 @@ export interface PullRequestViewProps {
   onOpenFiles?: () => void
   /** This PR's own changed files; when set, the Files tab shows it in place instead of calling `onOpenFiles`. */
   filesPanel?: ReactNode
+  /** Extra check status (e.g. other checkouts' PRs), shown above this PR's checks on the Checks tab. */
+  checksPanel?: ReactNode
   onMerge?: (method: PrMergeMethod) => Promise<void> | void
   /** A merge is in flight — disables the button and shows a spinner. */
   merging?: boolean
@@ -298,6 +300,7 @@ function PullRequestViewBody({
   closeError,
   onOpenFiles,
   filesPanel,
+  checksPanel,
   onMerge,
   merging = false,
   mergeError,
@@ -405,7 +408,10 @@ function PullRequestViewBody({
            if (evidence === "commits") return (<CommitEvidence pr={pr} />)
            if (evidence === "files" && filesPanel) return filesPanel
 return (evidence === "checks" ? (
-            <CheckEvidence pr={pr} stack={stack} />
+            <>
+              {checksPanel}
+              <CheckEvidence pr={pr} stack={stack} />
+            </>
           ) : (
           <>
           {/*
@@ -597,13 +603,24 @@ return (evidence === "checks" ? (
     if (!compact) setRailOpen(false)
   }, [compact])
 
+  // No evidence tabs without a loaded PR, so sibling checkouts' checks sit above
+  // the empty/error state instead — capped so many of them can't bury it.
+  const withChecksPanel = (view: ReactNode) =>
+    checksPanel ? (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="max-h-[50%] flex-none overflow-y-auto">{checksPanel}</div>
+        {view}
+      </div>
+    ) : (
+      view
+    )
   const loadView = renderLoadState(pr, connected, busy, loadError, onRetryLoad)
-  if (loadView) return loadView
+  if (loadView) return withChecksPanel(loadView)
   if (pr === null) {
     // Workspace setup/run is independent of whether a PR exists yet — a
     // worktree session reaches the Checks tab before publishing, and that's
     // exactly when setup is most likely to still need a retry or skip.
-    return (
+    return withChecksPanel(
       <div className="relative flex min-h-0 min-w-0 flex-1">
         {renderCreatePullRequest()}
         {workflow && (

@@ -35,6 +35,10 @@ test("side chat answers, follows up, leaves the main transcript alone and clears
   await window.getByRole("button", { name: "Open side chat" }).click()
   const panel = window.getByTestId("side-chat-panel")
   await expect(panel).toBeVisible()
+  // Docked to the window's right edge, not inside the chat column.
+  await expect(window.getByTestId("window-dock").getByTestId("side-chat-panel")).toBeVisible()
+  const box = await panel.boundingBox()
+  expect(Math.round((box?.x ?? 0) + (box?.width ?? 0))).toBe(1600)
 
   const ask = panel.getByLabel("Ask a quick question")
   await ask.fill("[[side-chat]] which branch?")

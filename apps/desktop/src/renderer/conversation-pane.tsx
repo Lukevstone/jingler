@@ -6,6 +6,7 @@
  * does not unmount the agent stream.
  */
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type {
   AgentEndpointCatalog,
@@ -58,6 +59,7 @@ import {
   ProviderConnectSheet,
   PlanReview,
   SideChatPanel,
+  useWindowDock,
   useContainerWidth,
   OPEN_THREAD_SWITCHER_EVENT
 } from "@jingler/ui"
@@ -241,10 +243,12 @@ function McpRecoveryCards({
 
 type SideChat = ReturnType<typeof useSideChat>
 
-function SideChatDock({ sideChat, session, chat }: { sideChat: SideChat; session: Session; chat: Session["chats"][number] }) {
-  if (!sideChat.open) return null
+/** Docks to the window's right edge (AppShell), not the chat column; only the focused pane's chat claims it. */
+function SideChatDock({ sideChat, session, chat, paneFocused }: { sideChat: SideChat; session: Session; chat: Session["chats"][number]; paneFocused: boolean }) {
+  const dock = useWindowDock()
+  if (!sideChat.open || !paneFocused) return null
   const providerId: ProviderId | null = chat.providerId ?? session.providerId ?? null
-  return (
+  const panel = (
     <SideChatPanel
       messages={sideChat.messages}
       busy={sideChat.busy}
@@ -254,9 +258,10 @@ function SideChatDock({ sideChat, session, chat }: { sideChat: SideChat; session
       onAsk={sideChat.ask}
       onClose={sideChat.close}
       onToggleExpand={sideChat.toggleExpand}
-      className={sideChat.expanded ? "w-[min(640px,60%)] flex-none" : "w-[360px] flex-none"}
+      className={sideChat.expanded ? "w-[min(640px,60vw)] flex-none" : "w-[360px] flex-none"}
     />
   )
+  return dock ? createPortal(panel, dock) : panel
 }
 
 const activeChatFor = (session: Session) => session.chats.find((chat) => chat.id === session.activeChatId) ?? session.chats[0]!
@@ -1368,7 +1373,7 @@ export function ConversationPane({
           </div>
         </>
       )}
-      <SideChatDock sideChat={sideChat} session={session} chat={activeChat} />
+      <SideChatDock sideChat={sideChat} session={session} chat={activeChat} paneFocused={paneFocused} />
     </div>
     </AttachmentSourceProvider>
     </OpenAssetProvider>
