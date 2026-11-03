@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test"
 import { addProject, appShell, createWorkspace, expect, sessionRow, test } from "./fixtures.js"
 import { startFakeLinearServer } from "./fake-linear.js"
 const API_KEY = "lin_api_e2e_linear_plugin"
-const LINKED_LINEAR_ISSUE = /Linked issue ENG-/
+const LINEAR_ISSUE_CHIP = /^ENG-\d+$/
 const LINEAR_IDENTIFIER = /^ENG-/
 const LINEAR_SOURCE_NAME = /^Linear issue/
 const NEW_SESSION_TABS = ["Branch", "Pull request", "Issue"] as const
@@ -194,7 +194,9 @@ test("links an existing Linear issue and creates a new one from workspace Issue 
     await launched.window.getByRole("button", { name: "Search", exact: true }).click()
     await expect(launched.window.getByText("Document retry policy", { exact: true })).toBeVisible()
     await launched.window.getByRole("button", { name: "Link ENG-124" }).click()
-    await expect(linkRow.getByLabel("Linked issue ENG-124")).toBeVisible()
+    // The active session's issue is a header chip since #964, not a row label.
+    const issueChip = launched.window.getByRole("button", { name: "ENG-124", exact: true })
+    await expect(issueChip).toBeVisible()
     const linked = launched.window.getByRole("heading", { name: /Document retry policy/ })
     await expect(linked).toBeVisible()
     await expect(linked).toContainText("ENG-124")
@@ -202,7 +204,7 @@ test("links an existing Linear issue and creates a new one from workspace Issue 
     await expect(launched.window.getByTestId("comment-composer")).toBeVisible()
 
     await launched.window.getByRole("button", { name: "Unlink", exact: true }).click()
-    await expect(linkRow.getByLabel("Linked issue ENG-124")).toHaveCount(0)
+    await expect(issueChip).toHaveCount(0)
     await expect(launched.window.getByRole("heading", { name: "Create an issue" })).toBeVisible({
       timeout: 20_000
     })
@@ -216,7 +218,7 @@ test("links an existing Linear issue and creates a new one from workspace Issue 
     await expect(launched.window.getByRole("heading", { name: /Reconcile duplicate charges/ })).toBeVisible({
       timeout: 20_000
     })
-    await expect(linkRow.getByLabel(LINKED_LINEAR_ISSUE)).toBeVisible()
+    await expect(launched.window.getByRole("button", { name: LINEAR_ISSUE_CHIP })).toBeVisible()
     expect(linear.operations).toContain("issueCreate")
 
     // SAFETY: The desktop session store owns this file and validates its schema
