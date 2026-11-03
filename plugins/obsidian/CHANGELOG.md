@@ -1,5 +1,7 @@
 # @jingler/plugin-obsidian
 
+## 0.20.3
+
 ## 0.20.2
 
 ## 0.20.1

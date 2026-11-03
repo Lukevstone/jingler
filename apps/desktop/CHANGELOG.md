@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.20.3
+
+### Patch Changes
+
+- 3889962: Fix "Plan belongs to a different workspace" after a no-repo session switches into a repo.
+  - @jingler/plannotator-ext@0.20.3
+
 ## 0.20.2
 
 ### Patch Changes
