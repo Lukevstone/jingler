@@ -79,12 +79,12 @@ const localKey = (sessionId: string, checkoutId?: string) =>
 const threadsKey = (sessionId: string, prNumber: number | null) =>
   ["github", "review-threads", sessionId, prNumber] as const
 
-const availableReviewSource = (
+// An empty local source is a real answer (nothing uncommitted), never a cue to show the PR's committed files.
+export const availableReviewSource = (
   source: ReviewSource,
   prAvailable: boolean,
   localAvailable: boolean
 ): ReviewSource => {
-  if (source === "local" && !localAvailable && prAvailable) return "pr"
   if (source === "pr" && !prAvailable && localAvailable) return "local"
   return source
 }

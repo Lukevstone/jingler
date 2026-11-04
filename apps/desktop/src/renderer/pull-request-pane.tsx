@@ -16,6 +16,7 @@ import { scopedPrNumber } from "./subagent-scope.js"
 import { useViewedChild } from "./subagent-tab-store.js"
 import { useSubagentView } from "./use-subagent-view.js"
 import { useWorkspaceWorkflow } from "./use-workspace-workflow.js"
+import { setReviewPrLayer } from "./review-store.js"
 
 export function PullRequestPane({
   session,
@@ -140,7 +141,12 @@ export function PullRequestPane({
       onResolveThread={resolveThread}
       onReplyToThread={replyToThread}
       onOpenOnGithub={openOnGithub}
-      onOpenFiles={onOpenFiles}
+      onOpenFiles={() => {
+        // Changes reads the layer from the review store; point it at the PR on screen.
+        const own = activeCheckoutOf(session).prNumber
+        setReviewPrLayer(session.id, own, shownPr === own ? null : shownPr)
+        onOpenFiles()
+      }}
       checksPanel={<CheckoutChecks session={session} />}
       conflictedFiles={conflictedFiles}
       onResolveConflicts={resolveConflicts}
