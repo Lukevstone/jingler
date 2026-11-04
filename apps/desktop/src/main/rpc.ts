@@ -651,7 +651,9 @@ export const sessionDiff = (id: string, checkoutId?: string, workspacePath?: str
       return yield* WorkspaceService.diff(target, checkout.baseBranch);
     }
     if (!checkout.worktreePath) return EMPTY_REVIEW_DIFF;
-    return yield* WorkspaceService.diff(checkout.worktreePath, checkout.baseBranch);
+    // Uncommitted work only (against HEAD), like other IDEs' Changes view;
+    // committed branch work belongs to the PR view.
+    return yield* WorkspaceService.diff(checkout.worktreePath);
   });
 
 export const sessionDiffStat = (id: string) =>
@@ -663,7 +665,7 @@ export const sessionDiffStat = (id: string) =>
       session === null ? [] : checkoutsOf(session),
       (checkout) =>
         checkout.worktreePath
-          ? WorkspaceService.diffStat(checkout.worktreePath, checkout.baseBranch)
+          ? WorkspaceService.diffStat(checkout.worktreePath)
           : Effect.succeed({ added: 0, removed: 0, files: 0 }),
     );
     return stats.reduce(
@@ -679,7 +681,7 @@ export const sessionFileDiff = (id: string, path: string, checkoutId?: string) =
     );
     const checkout = session && checkoutById(session, checkoutId);
     if (!checkout?.worktreePath) return { kind: "patch" as const, patch: "" };
-    return yield* WorkspaceService.boundedFileDiff(checkout.worktreePath, path, checkout.baseBranch);
+    return yield* WorkspaceService.boundedFileDiff(checkout.worktreePath, path);
   });
 
 const activeCheckoutOrNull = (session: Session | null) => (session === null ? null : activeCheckoutOf(session));

@@ -6,7 +6,6 @@
 import type { Project, Session, SessionCheckout } from "@jingler/core"
 import { activeCheckoutOf, checkoutPrsOf, workspaceModeOf } from "@jingler/core"
 import { PullRequestView } from "@jingler/ui"
-import { PrFilesPanel } from "./pr-files-panel.js"
 import { CheckoutChecks } from "./checkout-checks.js"
 import { usePullRequest } from "./use-pull-request.js"
 import { useAdversarialReview } from "./use-adversarial-review.js"
@@ -143,7 +142,6 @@ export function PullRequestPane({
       onOpenOnGithub={openOnGithub}
       onOpenFiles={onOpenFiles}
       checksPanel={<CheckoutChecks session={session} />}
-      filesPanel={<PrFilesPanel session={session} prNumber={stack.selected ?? activeCheckoutOf(session).prNumber} connected={connected} />}
       conflictedFiles={conflictedFiles}
       onResolveConflicts={resolveConflicts}
       review={{

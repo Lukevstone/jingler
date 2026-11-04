@@ -264,13 +264,15 @@ test("team pickup creates a session using pinned HTTPS fetches and files reuse t
     // Files accessed via Explorer (files tab removed in redesign 3.6)
     await expect(window.getByRole("tab", { name: "Explorer", exact: true })).toBeVisible()
     expect(JSON.parse(readFileSync(join(home, "jingler", "sessions.json"), "utf8"))).toHaveLength(1)
-    // The PR view's Files sub-tab lists this PR's files only, not the working tree.
+    // The PR view's Files sub-tab hands off to the app's Changes view (PR filter), not an embed.
     await sessionRow(window, "Team PR 45").click()
     await window.getByTestId("header-link-pr").click()
     await window.getByRole("tablist", { name: "Pull request sections" }).getByRole("tab", { name: /^Files/ }).click()
-    const panel = window.getByTestId("pr-files-panel")
-    await expect(panel.getByText("only-in-pr.ts").first()).toBeVisible()
-    await expect(panel.getByText("README.md")).toHaveCount(0)
+    await expect(window.getByTestId("pr-files-panel")).toHaveCount(0)
+    const changed = window.getByRole("region", { name: "Changed files tree" })
+    await expect(window.getByRole("radio", { name: /^PR #45/ })).toBeChecked()
+    await expect(changed.getByRole("treeitem", { name: "only-in-pr.ts" })).toBeVisible()
+    await expect(changed.getByRole("treeitem", { name: "README.md" })).toHaveCount(0)
   } finally { rmSync(cli.root, { recursive: true, force: true }) }
 })
 

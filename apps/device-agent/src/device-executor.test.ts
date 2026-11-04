@@ -570,7 +570,7 @@ it.each([true, false])("prepares only the requested remote project when an unimp
   }
 })
 
-it("passes the session baseBranch through diff, diffStat and fileDiff so committed branch work is kept", async () => {
+it("diff, diffStat and fileDiff report only uncommitted work, not committed branch work", async () => {
   const temp = withTempRoot()
   try {
     const repo = initGitRepo(join(temp.root, "..", "repo"))
@@ -591,9 +591,12 @@ it("passes the session baseBranch through diff, diffStat and fileDiff so committ
     const stat = await executor.execute(at("Sessions.diffStat", {}), async () => undefined)
     const diff = await executor.execute(at("Sessions.diff", {}), async () => undefined)
     const file = await executor.execute(at("Sessions.fileDiff", { path: "committed.txt" }), async () => undefined)
-    expect(stat).toMatchObject({ files: 1, added: 1 })
-    expect(JSON.stringify(diff)).toContain("committed.txt")
-    expect(JSON.stringify(file)).toContain("already committed")
+    expect(stat).toMatchObject({ files: 0, added: 0 })
+    expect(JSON.stringify(diff)).not.toContain("committed.txt")
+    expect(JSON.stringify(file)).not.toContain("already committed")
+    writeFileSync(join(worktree, "pending.txt"), "not yet committed\n")
+    const pending = await executor.execute(at("Sessions.diffStat", {}), async () => undefined)
+    expect(pending).toMatchObject({ files: 1, added: 1 })
   } finally {
     temp.cleanup()
   }

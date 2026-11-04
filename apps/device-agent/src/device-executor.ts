@@ -628,9 +628,6 @@ export const makeLiveDeviceSessionCommandExecutor = (
         )
       : Effect.succeed(explicit)
 
-  const baseBranchOf = (sessionId: string) =>
-    deviceSession(sessionId).pipe(Effect.map((session) => activeCheckoutOf(session).baseBranch))
-
   return makeDeviceSessionCommandExecutor({
     create: (input) => run(Effect.gen(function* () {
       const session = yield* SessionStore.create(input)
@@ -772,19 +769,13 @@ export const makeLiveDeviceSessionCommandExecutor = (
       limit: input.limit ?? 100
     })),
     diff: (sessionId) => run(
-      Effect.zip(repoPath(sessionId), baseBranchOf(sessionId)).pipe(
-        Effect.flatMap(([path, base]) => WorkspaceService.diff(path, base))
-      )
+      repoPath(sessionId).pipe(Effect.flatMap((path) => WorkspaceService.diff(path)))
     ),
     diffStat: (sessionId) => run(
-      Effect.zip(repoPath(sessionId), baseBranchOf(sessionId)).pipe(
-        Effect.flatMap(([path, base]) => WorkspaceService.diffStat(path, base))
-      )
+      repoPath(sessionId).pipe(Effect.flatMap((path) => WorkspaceService.diffStat(path)))
     ),
     fileDiff: (sessionId, filePath) => run(
-      Effect.zip(repoPath(sessionId), baseBranchOf(sessionId)).pipe(
-        Effect.flatMap(([path, base]) => WorkspaceService.boundedFileDiff(path, filePath, base))
-      )
+      repoPath(sessionId).pipe(Effect.flatMap((path) => WorkspaceService.boundedFileDiff(path, filePath)))
     ),
     files: (sessionId, explicit) => run(
       repoPath(sessionId, explicit).pipe(Effect.flatMap((path) => WorkspaceService.files(path)))
