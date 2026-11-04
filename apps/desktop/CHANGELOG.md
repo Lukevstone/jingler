@@ -1,5 +1,15 @@
 # @jingler/desktop
 
+## 0.22.0
+
+### Minor Changes
+
+- 3d4d8cd: Add "Report a bug" to the account menu: file a GitHub issue with an optional chat transcript and screenshots.
+
+### Patch Changes
+
+- @jingler/plannotator-ext@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes
