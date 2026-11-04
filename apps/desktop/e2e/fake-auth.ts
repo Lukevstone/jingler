@@ -42,6 +42,8 @@ export interface FakeAuthServer {
   readonly sentEmails: ReadonlyArray<string>;
   readonly managedRequests: ReadonlyArray<FakeManagedRequest>;
   readonly offloadRequests: ReadonlyArray<FakeOffloadRequest>;
+  /** Bodies POSTed to /api/bug-reports. */
+  readonly bugReports: ReadonlyArray<unknown>;
   readonly close: () => Promise<void>;
 }
 
@@ -114,6 +116,7 @@ export const startFakeAuthServer = async (
   const flakyFailed = new Set<string>();
   const managedRequests: Array<FakeManagedRequest> = [];
   const offloadRequests: Array<FakeOffloadRequest> = [];
+  const bugReports: Array<unknown> = [];
   let offloadEventReads = 0;
 
   const server: Server = createServer((req, res) => {
@@ -141,6 +144,15 @@ export const startFakeAuthServer = async (
       });
 
     const routes = [
+      {
+        matches: () => (url.pathname === "/api/bug-reports" && req.method === "POST"),
+        handle: function fileBugReport() {
+          void readJson().then((value) => {
+            bugReports.push(value);
+            json(201, { url: "https://github.com/e2e/jingler/issues/1", number: 1 });
+          });
+        }
+      },
       {
         matches: () => (url.pathname === "/api/offload/prime" && req.method === "POST"),
         handle: function primeOffload() {
@@ -492,6 +504,9 @@ export const startFakeAuthServer = async (
     },
     get offloadRequests() {
       return offloadRequests;
+    },
+    get bugReports() {
+      return bugReports;
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

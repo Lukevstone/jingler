@@ -81,6 +81,7 @@ Primitives in `components/`. Prefer these over raw elements.
 | SelectGroup, SelectLabel | `components/select.tsx` | SelectGroup / SelectLabel over the BeUI Select (h32 r8 trigger, 12px chevron, r8 menu, h32 items). | — | no | — |
 | SignalBars | `components/signal-bars.tsx` | Ascending signal-strength bars. | — | no | — |
 | Spin | `components/spin.tsx` | Box carrying a looping keyframe spin for icons. | active, animation, className, children | no | — |
+| BugReportDialog | `composites/bug-report-dialog.tsx` | "Report a bug" form: title, details, optional chat transcript, screenshots; files a GitHub issue. | open, chats, onSubmit | yes | — |
 | StatusDot | `components/status-dot.tsx` | Status dot, optionally glowing / pulsing. | status, tone, size, glow, pulse, className | yes | #362 (1.4) |
 | StatusRow, Stepper | `components/status-row.tsx` | Neutral status line (red only when failed); numbered done/current/upcoming stepper with aria-current. | icon, failed, steps, current | yes | #370 (2.5) |
 | NeedsSignInRow | `components/needs-sign-in-row.tsx` | MCP import-review row for an OAuth server: host + "Sign in after import" (StatusRow styling). | host | yes | #487 (10.8) |

@@ -92,6 +92,13 @@
       "when": 1793393412810,
       "tag": "0012_drop_workspace_checkpoint",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793818233613,
+      "tag": "0013_bug_report_rate_limit",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@ import { getAuth } from "./auth.js"
 import { UserRepository } from "./db/repositories/user-repository.js"
 import { env } from "./env.js"
 import { createGitHubRoutes, isLoopbackRedirect, withQuery } from "./github-routes.js"
+import { createBugReportRoutes } from "./bug-report-routes.js"
 import { createDeviceRoutes } from "./device-routes.js"
 import { createEnvironmentRoutes } from "./environment-routes.js"
 import { createManagedOffloadRoutes } from "./managed-offload.js"
@@ -83,6 +84,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => getAuth().handler(c.req.raw))
 
 /** Product GitHub App connection; intentionally outside BetterAuth's routes. */
 app.route("/api/github", createGitHubRoutes())
+
+/** Unauthenticated, rate-limited in-app bug reports. */
+app.route("/api/bug-reports", createBugReportRoutes())
 
 /** Remote-device control. BetterAuth remains the desktop identity provider. */
 app.route("/api/devices", createDeviceRoutes())

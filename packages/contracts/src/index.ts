@@ -1245,6 +1245,21 @@ export class JinglerCoreRpcs extends RpcGroup.make(
     success: Usage
   }),
 
+  /** File an in-app bug report (optional chat transcript + screenshots) as a GitHub issue. */
+  Rpc.make("BugReport.submit", {
+    success: Schema.Struct({ url: Schema.String }),
+    error: GitError,
+    payload: {
+      title: Schema.String,
+      description: Schema.String,
+      sessionId: Schema.optional(Schema.String),
+      chatId: Schema.optional(Schema.String),
+      screenshots: Schema.Array(
+        Schema.Struct({ type: Schema.Literal("image/png", "image/jpeg"), base64: Schema.String })
+      )
+    }
+  }),
+
   /** Persisted parent/child execution accounting grouped across harnesses. */
   Rpc.make("Usage.report", {
     success: UsageReport

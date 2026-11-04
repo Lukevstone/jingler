@@ -11,6 +11,7 @@ import { Layer, ManagedRuntime } from "effect"
 import { Database } from "./db/database.js"
 import { GitHubConnectionRepository } from "./db/repositories/github-connection-repository.js"
 import { GitHubSessionRouteRepository } from "./db/repositories/github-session-route-repository.js"
+import { BugReportRateRepository } from "./db/repositories/bug-report-rate-repository.js"
 import { UserRepository } from "./db/repositories/user-repository.js"
 import { DeviceRepository } from "./db/repositories/device-repository.js"
 import { ManagedEnvironmentRepository } from "./db/repositories/managed-environment-repository.js"
@@ -18,6 +19,7 @@ import { ManagedUsageRepository } from "./db/repositories/managed-usage-reposito
 
 const AppLayer = Layer.mergeAll(
   UserRepository.Default,
+  BugReportRateRepository.Default,
   GitHubConnectionRepository.Default,
   GitHubSessionRouteRepository.Default,
   DeviceRepository.Default,

@@ -45,7 +45,7 @@ import { ArchivedEntry } from "./archived-list.js"
 import { SessionTree, type SessionChatActions } from "./session-tree.js"
 import type { SessionSurface } from "./session-surface-layout.js"
 import { displayStatusLabel, displayStatusTone } from "../tokens.js"
-import { UserMenu } from "../composites/user-menu.js"
+import { UserMenu, type UserMenuProps } from "../composites/user-menu.js"
 import type { WhatsNewEntry } from "../composites/whats-new-dialog.js"
 import type { PendingEnvironmentSession } from "./environment-session-startup-machine.js"
 import {
@@ -149,6 +149,8 @@ export interface SessionSidebarProps {
   onSignOut?: () => void
   /** Open the optional sign-in dialog; the footer offers it while signed out. */
   onSignIn?: () => void
+  /** "Report a bug" in the account menu. */
+  bugReport?: UserMenuProps["bugReport"]
   /** Whether GitHub is connected (green dot on the Settings item). */
   ghConnected?: boolean
   /** Repo names that are starred — their groups pin to the top (repo grouping). */
@@ -461,6 +463,7 @@ function SidebarBody({
   onOpenSettings,
   onSignOut,
   onSignIn,
+  bugReport,
   ghConnected = false,
   starredRepoNames,
   onToggleStar,
@@ -982,6 +985,7 @@ return (renderExpandedGroupHeading())
           onLoadUsage={onLoadUsage}
           onSignOut={onSignOut}
           onSignIn={onSignIn}
+          bugReport={bugReport}
           ghConnected={ghConnected}
           version={version}
           whatsNew={whatsNew}

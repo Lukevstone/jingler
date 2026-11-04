@@ -1727,6 +1727,12 @@ function AuthedApp({
         issuesView={renderIssueInbox(issueInbox, issueSessionAction(selectedIssueTarget, openSelectedIssueSession))}
         onSignOut={onSignOut}
         onSignIn={onSignIn}
+        bugReport={{
+          chats: sessions.flatMap((session) =>
+            session.chats.map((chat) => ({ id: chat.id, sessionId: session.id, label: `${session.title} · ${chat.title ?? "Untitled chat"}` })),
+          ),
+          onSubmit: ({ screenshots, ...rest }) => rpc.bugReportSubmit({ ...rest, screenshots: [...screenshots] }),
+        }}
         banner={banner}
         repos={repos}
         projects={projectController.projects}

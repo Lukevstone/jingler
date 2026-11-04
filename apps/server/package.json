@@ -31,6 +31,8 @@
     "@jingler/core": "workspace:*",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "aws4fetch": "^1.0.20",
     "better-auth": "^1.6.23",
     "drizzle-orm": "^0.45.2",
     "effect": "^3.21.4",
@@ -39,8 +41,7 @@
     "postgres": "^3.4.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "resend": "^6.17.2",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2"
+    "resend": "^6.17.2"
   },
   "devDependencies": {
     "@jingler/tsconfig": "workspace:*",
