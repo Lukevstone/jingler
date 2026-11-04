@@ -77,11 +77,26 @@ function useLoadMoreSentinel(hasMore: boolean, error: string | null, onLoadMore:
   return sentinel
 }
 
-function LoadMoreFooter({ loadingMore, error, onLoadMore }: { loadingMore: boolean; error: string | null; onLoadMore?: () => void }) {
-  return error !== null
-    ? <InlineError message={error} onRetry={onLoadMore} />
-    : <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>
+/** End-of-list paging: auto-loads on scroll, and shows Retry instead after a failed page. */
+function InboxPager({ hasMore = false, loadingMore = false, error = null, onLoadMore, rows }: {
+  hasMore?: boolean; loadingMore?: boolean; error?: string | null; onLoadMore?: () => void; rows: number
+}) {
+  const sentinel = useLoadMoreSentinel(hasMore, error, onLoadMore, rows)
+  if (!hasMore) return null
+  return <div ref={sentinel} className="flex justify-center p-3">
+    {error !== null
+      ? <InlineError message={error} onRetry={onLoadMore} />
+      : <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>}
+  </div>
 }
+
+const countLabel = (shown: number, total: number | undefined) =>
+  total !== undefined && total > shown ? `Showing ${shown} of ${total}` : `${shown} PR${shown === 1 ? "" : "s"}`
+
+const repositoryChoices = (options: ReadonlyArray<string> = [], prs: ReadonlyArray<PullRequestListItem>) =>
+  filterOptions([...options, ...prs.map((pr) => pr.repository)])
+
+const draftChoice = (value: string): PrSearchFilters["draft"] => value === "draft" || value === "ready" ? value : "all"
 
 /** Typed fields of a serialized query; a change here waits for the debounce, anything else applies at once. */
 const typedFieldsOf = (raw: string | null) => {
@@ -204,11 +219,11 @@ export function PullRequestInbox({
   onRetry,
   onQueryChange,
   total,
-  hasMore = false,
-  loadingMore = false,
+  hasMore,
+  loadingMore,
   onLoadMore,
-  loadMoreError = null,
-  repositoryOptions = []
+  loadMoreError,
+  repositoryOptions
 }: PullRequestInboxProps) {
          function renderSelectedPullRequest() {
            return (<PullRequestView
@@ -296,7 +311,7 @@ export function PullRequestInbox({
   const { filter, query } = facets
   const setFilter = (next: PullRequestInboxFilter) => sendFilters({ type: "CHANGE", fields: { filter: next } })
   const setQuery = (next: string) => sendFilters({ type: "CHANGE", fields: { query: next } })
-  const repositories = useMemo(() => filterOptions([...repositoryOptions, ...prs.map((pr) => pr.repository)]), [repositoryOptions, prs])
+  const repositories = useMemo(() => repositoryChoices(repositoryOptions, prs), [repositoryOptions, prs])
   const suggestions = useMemo(() => ({
     author: [...new Set(prs.map((pr) => pr.author.login))].sort(),
     label: [...new Set(prs.flatMap((pr) => pr.labels.map((label) => label.name)))].sort(),
@@ -317,7 +332,6 @@ export function PullRequestInbox({
     const timer = setTimeout(send, TYPING_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [nextQuery, onQueryChange])
-  const sentinel = useLoadMoreSentinel(hasMore, loadMoreError, onLoadMore, visible.length)
   useActivateOnFocus(onActivate)
   const selectedKey = selected ? `${selected.repository}#${selected.number}` : null
   const showList = !(compact && mobileDetail && selected !== null)
@@ -344,11 +358,11 @@ export function PullRequestInbox({
               />)}
               <InboxFilterSelect label="Draft status" value={facets.draft} searchable={false}
                 options={[{ value: "all", label: "All" }, { value: "draft", label: "Draft" }, { value: "ready", label: "Ready" }]}
-                onChange={(value) => sendFilters({ type: "CHANGE", fields: { draft: value === "draft" || value === "ready" ? value : "all" } })}
+                onChange={(value) => sendFilters({ type: "CHANGE", fields: { draft: draftChoice(value) } })}
               />
             </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>{total !== undefined && total > visible.length ? `Showing ${visible.length} of ${total}` : `${visible.length} PR${visible.length === 1 ? "" : "s"}`}</span>
+              <span>{countLabel(visible.length, total)}</span>
               {hasActiveInboxFilters(facets) &&
                 <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2" onClick={() => sendFilters({ type: "CLEAR" })}>Clear filters</Button>}
             </div>
@@ -361,9 +375,7 @@ export function PullRequestInbox({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {getLoading()}
-            {hasMore && !loading && !error && <div ref={sentinel} className="flex justify-center p-3">
-              <LoadMoreFooter loadingMore={loadingMore} error={loadMoreError} onLoadMore={onLoadMore} />
-            </div>}
+            {!loading && !error && <InboxPager hasMore={hasMore} loadingMore={loadingMore} error={loadMoreError} onLoadMore={onLoadMore} rows={visible.length} />}
           </div>
         </InboxListColumn>
       )}

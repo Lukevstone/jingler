@@ -1541,6 +1541,44 @@ function NotificationsSection({
   )
 }
 
+type ReviewModel = NonNullable<GithubConfig["adversarialReviewModel"]>
+
+/** Same as the composer: the model list lives in a portalled popover, so the settings card can't clip it. */
+function ReviewModelPicker({ catalog, value, onChange }: {
+  catalog: AgentEndpointCatalog
+  value: GithubConfig["adversarialReviewModel"]
+  onChange: (model: ReviewModel) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const desktop = { ...catalog, endpoints: catalog.endpoints.filter(({ endpoint }) => endpoint.targetId === "desktop") }
+  const label = desktop.endpoints.find(({ endpoint }) => endpoint.id === value?.endpointId)?.models
+    .find((model) => model.id === value?.modelId)?.label ?? value?.modelId ?? "Choose model"
+  return (
+    <MorphPopover open={open} onOpenChange={setOpen}>
+      <MorphPopoverTrigger>
+        <Button type="button" variant="ghost" size="sm" aria-label="Review model" className="min-w-0 max-w-[220px] gap-1.5 px-2 text-muted-foreground">
+          <span className="truncate">{label}</span>
+        </Button>
+      </MorphPopoverTrigger>
+      <MorphPopoverContent side="bottom" align="end" sideOffset={8} radius={12} className="w-80 max-w-[calc(100vw-24px)] p-2">
+        <ProviderModelBrowser
+          catalog={desktop}
+          endpointId={value?.endpointId}
+          connectionId={null}
+          providerId={value?.providerId}
+          modelId={value?.modelId ?? null}
+          onSelect={({ runtimeId, endpointId, providerId, modelId }) => {
+            onChange({ runtimeId, endpointId, providerId, modelId })
+            setOpen(false)
+          }}
+          inlineContent
+          className="w-full"
+        />
+      </MorphPopoverContent>
+    </MorphPopover>
+  )
+}
+
 function GithubSection({
   connection,
   busy,
@@ -1636,15 +1674,6 @@ return ("bg-line-strong")
   )
   const [gitDraft, setGitDraft] = React.useState<GitConfig>(git ?? DEFAULT_GIT)
   const [confirmDisconnect, setConfirmDisconnect] = React.useState(false)
-  const [reviewModelOpen, setReviewModelOpen] = React.useState(false)
-  const reviewCatalog = agentEndpointCatalog && {
-    ...agentEndpointCatalog,
-    endpoints: agentEndpointCatalog.endpoints.filter(({ endpoint }) => endpoint.targetId === "desktop")
-  }
-  const reviewModel = draft.adversarialReviewModel
-  const reviewModelLabel = reviewCatalog?.endpoints
-    .find(({ endpoint }) => endpoint.id === reviewModel?.endpointId)?.models
-    .find((model) => model.id === reviewModel?.modelId)?.label ?? reviewModel?.modelId ?? "Choose model"
 
   React.useEffect(() => setDraft(github ?? DEFAULT_GITHUB), [github])
   React.useEffect(() => setGitDraft(git ?? DEFAULT_GIT), [git])
@@ -1744,35 +1773,15 @@ return ("bg-line-strong")
         </SettingsCard>
 
         <SettingsCard title="Adversarial review">
-          {reviewCatalog && (
+          {agentEndpointCatalog && (
             <SettingsRow
               label="Review model"
               help="Desktop harness and model used for read-only adversarial reviews."
-              control={
-                // Same as the composer: the list lives in a portalled popover, so the card can't clip it.
-                <MorphPopover open={reviewModelOpen} onOpenChange={setReviewModelOpen}>
-                  <MorphPopoverTrigger>
-                    <Button type="button" variant="ghost" size="sm" aria-label="Review model" className="min-w-0 max-w-[220px] gap-1.5 px-2 text-muted-foreground">
-                      <span className="truncate">{reviewModelLabel}</span>
-                    </Button>
-                  </MorphPopoverTrigger>
-                  <MorphPopoverContent side="bottom" align="end" sideOffset={8} radius={12} className="w-80 max-w-[calc(100vw-24px)] p-2">
-                    <ProviderModelBrowser
-                      catalog={reviewCatalog}
-                      endpointId={reviewModel?.endpointId}
-                      connectionId={null}
-                      providerId={reviewModel?.providerId}
-                      modelId={reviewModel?.modelId ?? null}
-                      onSelect={({ runtimeId, endpointId, providerId, modelId }) => {
-                        setGithub({ ...draft, adversarialReviewModel: { runtimeId, endpointId, providerId, modelId } })
-                        setReviewModelOpen(false)
-                      }}
-                      inlineContent
-                      className="w-full"
-                    />
-                  </MorphPopoverContent>
-                </MorphPopover>
-              }
+              control={<ReviewModelPicker
+                catalog={agentEndpointCatalog}
+                value={draft.adversarialReviewModel}
+                onChange={(adversarialReviewModel) => setGithub({ ...draft, adversarialReviewModel })}
+              />}
             />
           )}
           <GeneralToggleRow
