@@ -213,6 +213,27 @@ describe("PullRequestInbox", () => {
     expect(screen.getByRole("button", { name: UPDATE_API })).toBeTruthy()
   })
 
+  it("stops paging after a failed next page and retries only on click", () => {
+    const onLoadMore = vi.fn()
+    render(<WidthTierValue width={1200}><PullRequestInbox prs={prs} viewerLogin="morgan" selected={null} detail={null} onSelect={() => {}}
+      hasMore onLoadMore={onLoadMore} loadMoreError="GitHub rate limit, resumes at 13:00" /></WidthTierValue>)
+    expect(screen.getByText("GitHub rate limit, resumes at 13:00")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull()
+    expect(onLoadMore).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(onLoadMore).toHaveBeenCalledTimes(1)
+  })
+
+  it("applies the facets to This session rows, which are fetched by key", () => {
+    render(<WidthTierValue width={1200}><PullRequestInbox prs={prs} viewerLogin="morgan" selected={null} detail={null} onSelect={() => {}}
+      sessionPrKeys={new Set(prs.map((pr) => `${pr.repository}#${pr.number}`))} /></WidthTierValue>)
+    fireEvent.click(screen.getByRole("radio", { name: "This session" }))
+    expect(screen.getByText(UPDATE_API)).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText("Search pull requests"), { target: { value: "token" } })
+    expect(screen.getByText(FIX_TOKEN_REFRESH)).toBeTruthy()
+    expect(screen.queryByText(UPDATE_API)).toBeNull()
+  })
+
   it("shows an empty state when no pull requests match", () => {
     render(<WidthTierValue width={1200}><PullRequestInbox prs={[]} viewerLogin="morgan" selected={null} detail={null} onSelect={() => {}} /></WidthTierValue>)
     expect(screen.getByText("No pull requests match this view")).toBeTruthy()

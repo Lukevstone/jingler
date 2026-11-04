@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { HomePullRequest } from "@jingler/core"
-import { closedSince, ensurePick, localDate, pickReviews, reviewDone, todoReviews } from "./home-today-model.js"
+import { closedSince, ensurePick, localDate, parsePick, pickReviews, reviewDone, todoReviews } from "./home-today-model.js"
 
 const pr = (id: string, over: Partial<HomePullRequest> = {}): HomePullRequest => ({
   id, number: 1, title: id, url: "", repository: "acme/widget", author: "jo",
@@ -71,4 +71,15 @@ describe("todoReviews", () => {
 
 it("closedSince is 7 days back as a local date", () => {
   expect(closedSince(now)).toBe("2026-10-28")
+})
+
+describe("parsePick", () => {
+  const good = { date: "2026-11-04", account: "me", pickedAt: "2026-11-04T09:00:00.000Z", ids: ["PR_a", "MDExOlB1bGxSZXF1ZXN0MQ=="] }
+  it("keeps a valid record, legacy node ids included", () => {
+    expect(parsePick(good)).toEqual(good)
+  })
+  it("drops records that would block Home reads", () => {
+    for (const bad of [null, "x", { ...good, pickedAt: undefined }, { ...good, pickedAt: "soon" }, { ...good, ids: ["a", "b", "c", "d"] },
+      { ...good, ids: ["bad id"] }, { ...good, account: "" }, { ...good, date: "today" }]) expect(parsePick(bad)).toBeNull()
+  })
 })

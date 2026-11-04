@@ -177,6 +177,30 @@ describe("GitHubApi backend selection", () => {
     expect(appRepositories).not.toHaveBeenCalled()
   })
 
+  it("loads the session's linked PRs through the App when gh is unavailable", async () => {
+    const listInboxPrsBySlug = vi.fn()
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (url.pathname === "/repos/acme/widget") return new Response(JSON.stringify({ ...repository, full_name: "acme/widget" }), { headers: { "content-type": "application/json" } })
+      if (url.pathname === "/repos/acme/widget/pulls") return new Response(JSON.stringify([7, 8].map((number) => ({
+        number, title: `PR ${number}`, state: "open", user: { login: "jo" }, head: { ref: "h" }, base: { ref: "main" }, labels: [], updated_at: "2026-11-01T00:00:00Z"
+      }))), { headers: { "content-type": "application/json" } })
+      throw new Error(`unexpected ${url.pathname}`)
+    })
+    try {
+      const result = await runApi(GitHubApi.prsByKey([{ repository: "acme/widget", number: 8 }]), {
+        available: () => Effect.succeed(false), prsByKey: () => Effect.die("CLI must not run"), listInboxPrsBySlug
+      }, {
+        viewerLogin: () => Effect.succeed("me"),
+        credentialsForOwner: () => Effect.succeed({ token: "t", installationId: "77", expiresAt: "2030-01-01T00:00:00.000Z" }),
+        invalidate: () => Effect.void
+      })
+      expect(result.map((pr) => pr.number)).toEqual([8])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("lists CLI repositories before checking App installations", async () => {
     const appRepositories = vi.fn(() => Effect.succeed([{
       installationId: "77", repositoryId: "8", fullName: "app/widget"

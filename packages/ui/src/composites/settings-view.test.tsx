@@ -120,7 +120,7 @@ describe("General settings · offload status", () => {
 });
 
 describe("GitHub settings", () => {
-  it("persists the selected desktop harness and model for adversarial reviews", () => {
+  it("persists the selected desktop harness and model for adversarial reviews", async () => {
     const providerId = ProviderId.make("anthropic");
     const modelId = ProviderModelId.make("anthropic/claude-opus-4-6");
     const endpointId = nativeCliEndpointId("desktop", "claude");
@@ -170,8 +170,11 @@ describe("GitHub settings", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Review model" }));
     fireEvent.click(screen.getByRole("button", { name: "Model: Choose model" }));
     fireEvent.click(screen.getByRole("option", { name: /Claude Opus 4.6/i }));
+    // The list lives in a portalled popover (like the composer), which closes on pick.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     expect(onSaveGithub).toHaveBeenCalledWith({
       enabled: true,

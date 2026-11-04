@@ -1,11 +1,13 @@
-import type { GitHubTeamQueue, PrSearchFilters, PullRequestListItem } from "@jingler/core"
+import type { GitHubTeamQueue, PrSearchFilters } from "@jingler/core"
+export { matchesPrSearch } from "@jingler/core"
 import { GitHubApiError } from "@jingler/core"
 
 export const PR_PAGE_SIZE = 25
 /** Under this many GraphQL points left, stop paging until GitHub's reset. */
 export const RATE_LIMIT_FLOOR = 200
+// ISSUE_ADVANCED took a 300-term OR group live (Nov 2026); beyond that we warn instead of guessing.
 // ponytail: one OR group per query; split into aliased searches if a team outgrows this.
-export const MAX_SCOPE_TERMS = 100
+export const MAX_SCOPE_TERMS = 300
 
 const LOGIN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/
 const REPOSITORY = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}\/[a-zA-Z0-9_.-]{1,100}$/
@@ -59,6 +61,7 @@ export const buildPrSearchQuery = (filters: PrSearchFilters, team: TeamScope | n
     if (!LOGIN.test(filters.author)) throw invalid("Choose a valid GitHub login.")
     parts.push(`author:${filters.author}`)
   }
+  // GitHub search documents no escape for `"` inside a quoted value, so those characters are dropped.
   const label = filters.label.replace(/["\\]/g, "").trim()
   if (label) parts.push(`label:"${label}"`)
   if (filters.draft !== "all") parts.push(`draft:${filters.draft === "draft"}`)
@@ -68,19 +71,10 @@ export const buildPrSearchQuery = (filters: PrSearchFilters, team: TeamScope | n
   return parts.join(" ")
 }
 
-const same = (actual: string, wanted: string) => !wanted || actual.toLowerCase() === wanted.toLowerCase()
-
-/** The same filters applied in memory, for the GitHub App fallback that has no search. */
-export const matchesPrSearch = (pr: PullRequestListItem, filters: PrSearchFilters, viewerLogin: string): boolean => {
-  const relationship = {
-    all: true,
-    created: pr.author.login.toLowerCase() === viewerLogin.toLowerCase(),
-    assigned: pr.assignedToViewer,
-    "review-requested": pr.reviewRequestedFromViewer
-  }[filters.relationship]
-  const text = filters.text.trim().toLowerCase()
-  return relationship && same(pr.repository, filters.repository) && same(pr.author.login, filters.author) &&
-    (!filters.label || pr.labels.some((label) => same(label.name, filters.label))) &&
-    (filters.draft === "all" || pr.isDraft === (filters.draft === "draft")) &&
-    (!text || `${pr.title} ${pr.repository} ${pr.author.login} ${pr.number}`.toLowerCase().includes(text))
+/** A warning when a team scope is too big for one search, so a cut-off queue never looks complete. */
+export const scopeWarning = (team: TeamScope): string | null => {
+  const count = team.queue === "repositories" ? team.repositories.length : team.members.length
+  return count > MAX_SCOPE_TERMS
+    ? `This team has ${count} ${team.queue === "repositories" ? "repositories" : "members"}; only the first ${MAX_SCOPE_TERMS} are searched.`
+    : null
 }

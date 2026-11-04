@@ -1764,7 +1764,7 @@ function AuthedApp({
         liveActivity={liveActivity}
         allowFor={decideGateAllowFor}
         importCard={homeImportCard}
-        renderHomeToday={(openPullRequests) => <HomeTodayPanel onOpenAllPrs={openPullRequests} />}
+        renderHomeToday={() => <HomeTodayPanel />}
         interruptedSessions={interruptedSessions}
         chatActivities={chatActivities}
         prStates={prStates}
@@ -2462,6 +2462,7 @@ function renderPullRequestInbox(
     hasMore={pullRequestInbox.hasMore}
     loadingMore={pullRequestInbox.loadingMore}
     onLoadMore={pullRequestInbox.loadMore}
+    loadMoreError={pullRequestInbox.loadMoreError}
     repositoryOptions={pullRequestInbox.repositoryOptions} />;
 }
 

@@ -118,19 +118,20 @@ function usePullRequestList(input: ListInput) {
     enabled: search !== null && (!teamMode || ready && teamInput !== null),
     staleTime: 60_000,
     retry: retryUnlessRateLimited,
-    refetchOnWindowFocus: false,
+    // Past staleTime, focus re-reads the loaded pages; rows stay until fresh ones land.
+    refetchOnWindowFocus: true,
     refetchOnReconnect: false,
   })
   const sessionKeys = inboxQuery.kind === "session" ? inboxQuery.keys : null
   const sessionList = useQuery({
-    queryKey: ["github", "pr-inbox", "session", sessionKeys],
+    queryKey: ["github", "pr-inbox", "session", input.accountId, sessionKeys],
     queryFn: () => rpc.githubPrsByKey(sessionKeys ?? []),
     enabled: sessionKeys !== null,
     staleTime: 60_000,
     retry: retryUnlessRateLimited,
   })
   const repositories = useQuery({
-    queryKey: ["github", "repositories"],
+    queryKey: ["github", "repositories", input.accountId],
     queryFn: rpc.githubRepositories,
     staleTime: 10 * 60_000,
     retry: false,
@@ -146,6 +147,7 @@ function usePullRequestList(input: ListInput) {
     pending: activeList.isPending,
     hasMore: sessionKeys === null && hasNextPage,
     loadingMore: isFetchingNextPage,
+    loadMoreError: list.isFetchNextPageError ? listMessage(list.error) : null,
     loadMore,
     setQuery: setInboxQuery,
     repositoryOptions: repositories.data?.map((repository) => repository.fullName) ?? [],
@@ -269,6 +271,7 @@ export function usePullRequestInbox(_connected: boolean) {
     hasMore: listState.hasMore,
     loadingMore: listState.loadingMore,
     loadMore: listState.loadMore,
+    loadMoreError: listState.loadMoreError,
     setQuery: listState.setQuery,
     repositoryOptions: listState.repositoryOptions,
     viewerLogin: pullRequestInboxViewerLogin(teamMode, ready, identity.viewerLogin),

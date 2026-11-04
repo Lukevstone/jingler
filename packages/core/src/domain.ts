@@ -2027,8 +2027,8 @@ export const PrSearchPage = Schema.Struct({
 });
 export type PrSearchPage = Schema.Schema.Type<typeof PrSearchPage>;
 
-/** GraphQL node id of a pull request (the daily review pick stores these). */
-export const HomePrNodeId = Schema.String.pipe(Schema.pattern(/^PR_[A-Za-z0-9_-]{1,100}$/));
+/** GraphQL node id of a pull request (the daily review pick stores these): `PR_…` or legacy base64 `MDEx…`. */
+export const HomePrNodeId = Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_=+/-]{1,200}$/));
 
 /** One PR row on Home: My PRs, the review pool, or a picked review. */
 export const HomePullRequest = Schema.Struct({

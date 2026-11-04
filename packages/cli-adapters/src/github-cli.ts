@@ -19,7 +19,7 @@ import { Command, CommandExecutor } from "@effect/platform"
 import type { PlatformError } from "@effect/platform/Error"
 import { Effect, Stream } from "effect"
 import { MAX_IN_FLIGHT, makeRateGate } from "./github-rate-gate.js"
-import { PR_PAGE_SIZE, RATE_LIMIT_FLOOR, buildPrSearchQuery, type TeamScope } from "./github-pr-search.js"
+import { PR_PAGE_SIZE, RATE_LIMIT_FLOOR, buildPrSearchQuery, scopeWarning, type TeamScope } from "./github-pr-search.js"
 import {
   jsonRecord,
   mapApiFiles,
@@ -69,7 +69,7 @@ query($open:String!,$closed:String!,$ids:[ID!]!){
   open:search(query:$open,type:ISSUE,first:10){issueCount nodes{...H}}
   closed:search(query:$closed,type:ISSUE,first:10){issueCount nodes{...H}}
   pool:search(query:"is:pr is:open review-requested:@me -author:@me draft:false sort:created-asc",type:ISSUE,first:30){nodes{...H}}
-  direct:search(query:"is:pr is:open user-review-requested:@me -author:@me draft:false",type:ISSUE,first:30){nodes{... on PullRequest{id}}}
+  direct:search(query:"is:pr is:open user-review-requested:@me -author:@me draft:false sort:created-asc",type:ISSUE,first:30){nodes{...H}}
   picked:nodes(ids:$ids){...H}
 }`
 
@@ -765,7 +765,9 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
         if (query === null) {
           return emptyPage(team.queue === "repositories" ? "This team has no repositories of its own." : "This team has no members.")
         }
-        return yield* searchPrs(query, input.after)
+        const page = yield* searchPrs(query, input.after)
+        const warning = scopeWarning(scope)
+        return warning === null ? page : { ...page, warnings: [...page.warnings, warning] }
       }))
     },
     /** Specific PRs by repository + number (the session's linked PRs), one aliased call. */
@@ -993,7 +995,15 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
             ids: input.picked
           }
         })
-        const data = jsonRecord(jsonRecord(yield* json(null, ["api", "graphql", "--input", "-"], body, true)).data)
+        const raw = jsonRecord(yield* json(null, ["api", "graphql", "--input", "-"], body, true))
+        // Only a deleted/inaccessible picked node is a real answer (done); any other error is a failed
+        // read, and treating it as empty would freeze an empty pick or mark reviews done.
+        const failed = (Array.isArray(raw.errors) ? raw.errors : []).some((error) => {
+          const entry = jsonRecord(error)
+          return !(entry.type === "NOT_FOUND" && Array.isArray(entry.path) && entry.path[0] === "picked")
+        })
+        if (failed) return yield* Effect.fail(new GitHubApiError({ reason: "unavailable", message: "GitHub returned a partial result. Try again shortly." }))
+        const data = jsonRecord(raw.data)
         const search = (key: string) => jsonRecord(data[key])
         const nodes = (key: string) => {
           const value = search(key).nodes
@@ -1004,13 +1014,15 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
           return typeof id === "string" ? [id] : []
         }))
         const map = (key: string) => nodes(key).flatMap((node) => mapHomePullRequest(node, directIds) ?? [])
+        // Direct requests come from their own search so a newer personal request still beats 30 older team ones.
+        const pool = [...new Map([...map("direct"), ...map("pool")].map((pr) => [pr.id, pr])).values()]
         const count = (key: string) => typeof search(key).issueCount === "number" ? search(key).issueCount as number : 0
         const picked = Array.isArray(data.picked) ? data.picked : []
         return {
           viewerLogin: typeof jsonRecord(data.viewer).login === "string" ? jsonRecord(data.viewer).login as string : "",
           mine: [...map("open"), ...map("closed")].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
           mineTotal: count("open") + count("closed"),
-          reviewPool: map("pool"),
+          reviewPool: pool,
           picked: input.picked.map((_, index) => mapHomePullRequest(picked[index], directIds))
         } satisfies HomeGitHub
       }),

@@ -23,7 +23,7 @@ export const Populated: Story = {
       { id: "PR_3", pr: null, done: true }
     ])}
     mine={load({ prs: [pr(4, { reviewDecision: "approved" }), pr(5, { checks: "fail" }), pr(6, { state: "merged" })], total: 9 })}
-    onOpenPr={noop} onOpenAllPrs={noop} open={open} onOpenChange={noop}
+    onOpenPr={noop} open={open} onOpenChange={noop}
   />
 }
 export const Empty: Story = {

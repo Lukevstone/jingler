@@ -24,6 +24,21 @@ export const pickReviews = (pool: ReadonlyArray<HomePullRequest>): ReadonlyArray
     .slice(0, DAILY_REVIEWS)
     .map((pr) => pr.id)
 
+const NODE_ID = /^[A-Za-z0-9_=+/-]{1,200}$/
+
+/** A stored pick, or null when storage holds anything else (a bad record would block every Home read). */
+export const parsePick = (raw: unknown): DailyPick | null => {
+  const pick = raw as Partial<Record<keyof DailyPick, unknown>> | null
+  if (typeof pick !== "object" || pick === null) return null
+  const { date, account, pickedAt, ids } = pick
+  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+    typeof account === "string" && account !== "" &&
+    typeof pickedAt === "string" && Number.isFinite(Date.parse(pickedAt)) &&
+    Array.isArray(ids) && ids.length <= DAILY_REVIEWS && ids.every((id) => typeof id === "string" && NODE_ID.test(id))
+    ? { date, account, pickedAt, ids }
+    : null
+}
+
 /** Today's pick for this account: the stored one, or a fresh one from the pool. */
 export const ensurePick = (
   stored: DailyPick | null,

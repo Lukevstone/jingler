@@ -74,6 +74,21 @@ describe("GitHubCli", () => {
     expect(result.map((pr) => pr.number)).toEqual([1])
   })
 
+  it("home merges direct requests into the pool and treats only a missing picked node as an answer", async () => {
+    const node = (id: string, createdAt: string) => ({ id, number: 1, title: id, url: "u", repository: { nameWithOwner: "acme/widget" }, state: "OPEN", createdAt })
+    const reply = (errors: unknown[]) => ({ exitCode: errors.length ? 1 : 0, stdout: JSON.stringify({ data: {
+      viewer: { login: "me" }, open: { issueCount: 0, nodes: [] }, closed: { issueCount: 0, nodes: [] },
+      pool: { nodes: [node("PR_team", "2026-01-01T00:00:00Z")] }, direct: { nodes: [node("PR_direct", "2026-11-01T00:00:00Z")] },
+      picked: [null]
+    }, errors }) })
+    const ok = await run(GitHubCli.home({ picked: ["MDExOlB1bGxSZXF1ZXN0MQ=="], closedSince: "2026-10-28" }), (command) =>
+      command === "gh" ? reply([{ type: "NOT_FOUND", path: ["picked", 0] }]) : undefined)
+    expect(ok.reviewPool.map((pr) => [pr.id, pr.directRequest])).toEqual([["PR_direct", true], ["PR_team", false]])
+    expect(ok.picked).toEqual([null])
+    await expect(run(GitHubCli.home({ picked: [], closedSince: "2026-10-28" }), (command) =>
+      command === "gh" ? reply([{ type: "SERVICE_UNAVAILABLE", path: ["pool"] }]) : undefined)).rejects.toThrow("partial result")
+  })
+
   it("paginates the issue inbox and tags rows with repository and comment count", async () => {
     const result = await run(GitHubCli.issueInbox(), (command, args) => {
       if (command !== "gh" || args[0] !== "api") return

@@ -1,4 +1,5 @@
 export * from "./domain.js"
+export * from "./pr-search.js"
 export * from "./review-policy.js"
 export * from "./session-checkout.js"
 export * from "./side-chat-support.js"

@@ -1347,7 +1347,13 @@ export class GitHubApi extends Effect.Service<GitHubApi>()("@jingler/GitHubApi",
       // Team requests never fall back to the App or change identity for writes.
       teams: () => cli.teams().pipe(Effect.provide(runtime)),
       home: (input: Parameters<typeof cli.home>[0]) => cli.home(input).pipe(Effect.provide(runtime)),
-      prsByKey: (keys: Parameters<typeof cli.prsByKey>[0]) => cli.prsByKey(keys).pipe(Effect.provide(runtime)),
+      prsByKey: (keys: Parameters<typeof cli.prsByKey>[0]) => preferCli(cli.prsByKey(keys), async () => {
+        // The App has no by-key read; list each linked repository's open PRs (what the inbox showed before).
+        const repositories = [...new Set(keys.map((key) => key.repository.toLowerCase()))]
+        const wanted = new Set(keys.map((key) => `${key.repository.toLowerCase()}#${key.number}`))
+        const groups = await Promise.all(repositories.map((repository) => client.listInboxPrsBySlug(repository)))
+        return groups.flat().filter((pr) => wanted.has(`${pr.repository.toLowerCase()}#${pr.number}`))
+      }),
       teamPr: (input: Parameters<typeof cli.teamPr>[0]) => cli.teamPr(input).pipe(Effect.provide(runtime)),
       teamCheckout: (input: Parameters<typeof cli.teamCheckout>[0]) => cli.teamCheckout(input).pipe(Effect.provide(runtime)),
       teamComment: (input: Parameters<typeof cli.teamComment>[0]) => cli.teamComment(input).pipe(Effect.provide(runtime)),

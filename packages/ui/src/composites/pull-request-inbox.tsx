@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { useMachine } from "@xstate/react"
 import { Select, SelectContent, SelectItem, SelectSearch, SelectTrigger } from "../components/beui/select.js"
 import { initialInboxFilters, pullRequestInboxFilterMachine, type PullRequestInboxFacets, type PullRequestInboxFilter } from "./pull-request-inbox-filter-machine.js"
-import type { GitHubTeam, GitHubTeamQueue, PrMergeMethod, PrSearchFilters, PullRequest, PullRequestListItem, ReviewComment } from "@jingler/core"
+import { matchesPrSearch, type GitHubTeam, type GitHubTeamQueue, type PrMergeMethod, type PrSearchFilters, type PullRequest, type PullRequestListItem, type ReviewComment } from "@jingler/core"
 import { ArrowLeft, GitPullRequest, MessageSquare } from "lucide-react"
 import { Avatar, githubAvatarUrl } from "../components/avatar.js"
 import { Badge } from "../components/badge.js"
@@ -117,6 +117,8 @@ export interface PullRequestInboxProps {
   loadingMore?: boolean
   /** Next page; called when the end of the list scrolls into view. */
   onLoadMore?: () => void
+  /** The last next-page load failed; paging waits for an explicit Retry. */
+  loadMoreError?: string | null
   /** Every repository the account can see, loaded in the background. */
   repositoryOptions?: ReadonlyArray<string>
 }
@@ -169,6 +171,7 @@ export function PullRequestInbox({
   hasMore = false,
   loadingMore = false,
   onLoadMore,
+  loadMoreError = null,
   repositoryOptions = []
 }: PullRequestInboxProps) {
          function renderSelectedPullRequest() {
@@ -265,15 +268,25 @@ export function PullRequestInbox({
   const [mobileDetail, setMobileDetail] = useState(false)
   const compact = !atLeast(useWidthTier(), "mid")
   const isTeam = Boolean(teamControls?.teamId)
-  // GitHub already applied every filter; rendering the rows as-is keeps paging honest.
-  const visible = prs
-  const nextQuery = JSON.stringify(inboxQueryOf(facets, isTeam, sessionPrKeys))
+  const inboxQuery = inboxQueryOf(facets, isTeam, sessionPrKeys)
+  const nextQuery = JSON.stringify(inboxQuery)
+  // Search rows are already filtered by GitHub; session rows are fetched by key, so filter them here.
+  const visible = useMemo(() => {
+    const parsed = JSON.parse(nextQuery) as PullRequestInboxQuery
+    if (parsed.kind !== "session") return prs
+    const { filters } = inboxQueryOf({ ...facets, filter: "all" }, isTeam) as { filters: PrSearchFilters }
+    return prs.filter((pr) => matchesPrSearch(pr, filters, viewerLogin))
+  }, [prs, nextQuery, facets, isTeam, viewerLogin])
   const sentQuery = useRef<string | null>(null)
   useEffect(() => {
     if (!onQueryChange || nextQuery === sentQuery.current) return
     const send = () => { sentQuery.current = nextQuery; onQueryChange(JSON.parse(nextQuery) as PullRequestInboxQuery) }
-    // Only typed text waits; chips and selects apply at once.
-    const textOf = (raw: string | null) => raw === null ? null : (JSON.parse(raw) as { filters?: { text?: string } }).filters?.text ?? ""
+    // Only typed fields wait; chips and selects apply at once.
+    const textOf = (raw: string | null) => {
+      if (raw === null) return null
+      const filters = (JSON.parse(raw) as { filters?: Partial<PrSearchFilters> }).filters
+      return JSON.stringify([filters?.text ?? "", filters?.author ?? "", filters?.label ?? ""])
+    }
     if (sentQuery.current === null || textOf(sentQuery.current) === textOf(nextQuery)) return send()
     const timer = setTimeout(send, TYPING_DEBOUNCE_MS)
     return () => clearTimeout(timer)
@@ -281,11 +294,11 @@ export function PullRequestInbox({
   const sentinel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const node = sentinel.current
-    if (!node || !hasMore || !onLoadMore || typeof IntersectionObserver === "undefined") return
+    if (!node || !hasMore || loadMoreError !== null || !onLoadMore || typeof IntersectionObserver === "undefined") return
     const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMore() }, { rootMargin: "200px" })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, onLoadMore, visible.length])
+  }, [hasMore, loadMoreError, onLoadMore, visible.length])
   useActivateOnFocus(onActivate)
   const selectedKey = selected ? `${selected.repository}#${selected.number}` : null
   const showList = !(compact && mobileDetail && selected !== null)
@@ -330,7 +343,9 @@ export function PullRequestInbox({
           <div className="min-h-0 flex-1 overflow-y-auto">
             {getLoading()}
             {hasMore && !loading && !error && <div ref={sentinel} className="flex justify-center p-3">
-              <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>
+              {loadMoreError !== null
+                ? <InlineError message={loadMoreError} onRetry={onLoadMore} />
+                : <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>}
             </div>}
           </div>
         </InboxListColumn>

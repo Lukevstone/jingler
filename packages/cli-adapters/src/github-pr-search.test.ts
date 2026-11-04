@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { PrSearchFilters, PullRequestListItem } from "@jingler/core"
-import { buildPrSearchQuery, matchesPrSearch, type TeamScope } from "./github-pr-search.js"
+import { MAX_SCOPE_TERMS, buildPrSearchQuery, matchesPrSearch, scopeWarning, type TeamScope } from "./github-pr-search.js"
 
 const none: PrSearchFilters = { relationship: "all", repository: "", author: "", label: "", draft: "all", text: "" }
 const team = (over: Partial<TeamScope> = {}): TeamScope => ({
@@ -50,5 +50,14 @@ describe("matchesPrSearch", () => {
     expect(matchesPrSearch(pr, { ...none, relationship: "assigned", label: "BUG", text: "api" }, "me")).toBe(true)
     expect(matchesPrSearch(pr, { ...none, relationship: "created" }, "me")).toBe(false)
     expect(matchesPrSearch(pr, { ...none, draft: "draft" }, "me")).toBe(false)
+  })
+})
+
+describe("scopeWarning", () => {
+  it("warns only when a team outgrows one search, so a cut-off queue never looks complete", () => {
+    const many = Array.from({ length: MAX_SCOPE_TERMS + 1 }, (_, i) => `user${i}`)
+    expect(scopeWarning(team())).toBeNull()
+    expect(scopeWarning(team({ members: many }))).toContain(`only the first ${MAX_SCOPE_TERMS}`)
+    expect(buildPrSearchQuery(none, team({ members: many }))).not.toContain(`user${MAX_SCOPE_TERMS}`)
   })
 })

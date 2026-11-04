@@ -34,18 +34,20 @@ export function HomePrRow({ pr, done = false, onOpen }: {
 type Load<T> = { readonly data: T | undefined; readonly loading: boolean; readonly error: string | null; readonly onRetry: () => void }
 
 function body<T>(load: Load<T>, render: (data: T) => ReactNode) {
-  if (load.error !== null) return <InlineError message={load.error} onRetry={load.onRetry} className="mx-3" />
-  if (load.data === undefined) return <ListSkeleton rows={3} rowHeight={40} className="px-3" />
-  return render(load.data)
+  const error = load.error === null ? null : <InlineError message={load.error} onRetry={load.onRetry} className="mx-3" />
+  if (load.data === undefined) return error ?? <ListSkeleton rows={3} rowHeight={40} className="px-3" />
+  // Cached rows stay visible under a failed refresh, so stale state never looks current.
+  return <>{error}{render(load.data)}</>
 }
 
+/** Everything My PRs counts (open plus recently closed); the in-app inbox only lists open PRs. */
+export const MY_PRS_URL = "https://github.com/pulls?q=is%3Apr+author%3A%40me+sort%3Aupdated-desc"
+
 /** Home › To Do (today's frozen review pick) beside My PRs; stacks on narrow windows. */
-export function HomeToday({ reviews, mine, onOpenPr, onOpenAllPrs, open, onOpenChange }: {
+export function HomeToday({ reviews, mine, onOpenPr, open, onOpenChange }: {
   readonly reviews: Load<ReadonlyArray<TodoReview>>
   readonly mine: Load<{ readonly prs: ReadonlyArray<HomePullRequest>; readonly total: number }>
   readonly onOpenPr: (url: string) => void
-  /** "+N more" opens the pull request inbox. */
-  readonly onOpenAllPrs?: () => void
   readonly open: { readonly todo: boolean; readonly mine: boolean }
   readonly onOpenChange: (section: "todo" | "mine", open: boolean) => void
 }) {
@@ -81,8 +83,8 @@ export function HomeToday({ reviews, mine, onOpenPr, onOpenAllPrs, open, onOpenC
             ? <EmptyState title="No open or recent PRs" className="py-4" />
             : <>
                 {prs.slice(0, MINE_SHOWN).map((pr) => <HomePrRow key={pr.id} pr={pr} onOpen={onOpenPr} />)}
-                {total > MINE_SHOWN && onOpenAllPrs
-                  ? <Button variant="ghost" size="sm" onClick={onOpenAllPrs} className="ml-1.5">+{total - MINE_SHOWN} more</Button>
+                {total > MINE_SHOWN
+                  ? <Button variant="ghost" size="sm" onClick={() => onOpenPr(MY_PRS_URL)} className="ml-1.5">+{total - MINE_SHOWN} more</Button>
                   : null}
               </>)}
         </div>
