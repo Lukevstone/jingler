@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "../components/button.js"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/dialog.js"
 import { Field } from "../components/field.js"
@@ -35,6 +35,14 @@ const MAX_SCREENSHOTS = 5
 const MAX_SCREENSHOT_TOTAL_BYTES = 2_500_000
 const MAX_DESCRIPTION_CHARS = 20_000
 const NO_TRANSCRIPT = "none"
+const ONLY_IMAGES = "Only PNG or JPEG images can be attached."
+// Leading bytes of the formats we accept. A file's claimed type is not trusted: the bytes must match too.
+const MAGIC: Record<BugReportScreenshot["type"], readonly number[]> = { "image/png": [0x89, 0x50, 0x4e, 0x47], "image/jpeg": [0xff, 0xd8, 0xff] }
+const isImageType = (type: string): type is BugReportScreenshot["type"] => type === "image/png" || type === "image/jpeg"
+const hasMagic = (type: BugReportScreenshot["type"], base64: string): boolean => {
+  const head = atob(base64.slice(0, 8))
+  return MAGIC[type].every((byte, index) => head.charCodeAt(index) === byte)
+}
 
 const readBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -43,6 +51,22 @@ const readBase64 = (file: File): Promise<string> =>
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
+
+const TOO_BIG = "Screenshots must total under 2.5 MB."
+
+/** Which dropped/pasted files to read: images only, within the count and size budget. */
+const planFiles = (files: readonly File[], shots: readonly { readonly base64: string }[], room: number) => {
+  const accepted = files.filter((file) => isImageType(file.type)).slice(0, room)
+  const bytes = shots.reduce((sum, { base64 }) => sum + base64.length * 0.75, 0) + accepted.reduce((sum, file) => sum + file.size, 0)
+  const error = bytes > MAX_SCREENSHOT_TOTAL_BYTES ? TOO_BIG : accepted.length < files.length ? ONLY_IMAGES : null
+  return { accepted, error }
+}
+
+const readShot = async (file: File) => ({
+  name: file.name || "pasted-image",
+  type: file.type as BugReportScreenshot["type"],
+  base64: await readBase64(file)
+})
 
 /** "Report a bug": title, details, optional chat transcript and screenshots → a GitHub issue. */
 export function BugReportDialog({ open, onOpenChange, chats, onSubmit }: BugReportDialogProps) {
@@ -53,6 +77,7 @@ export function BugReportDialog({ open, onOpenChange, chats, onSubmit }: BugRepo
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [reading, setReading] = useState(0)
+  const [dragging, setDragging] = useState(false)
   // Bumped on every close so file reads that finish later can't fill the next draft.
   const draft = useRef(0)
   const [issueUrl, setIssueUrl] = useState<string | null>(null)
@@ -68,27 +93,39 @@ export function BugReportDialog({ open, onOpenChange, chats, onSubmit }: BugRepo
     setIssueUrl(null)
   }
 
-  const addFiles = async (files: FileList | null) => {
-    setError(null)
-    const room = MAX_SCREENSHOTS - shots.length
-    const accepted = Array.from(files ?? [])
-      .filter((file) => file.type === "image/png" || file.type === "image/jpeg")
-      .slice(0, room)
-    const total = [...shots.map(({ base64 }) => base64.length * 0.75), ...accepted.map((file) => file.size)].reduce((sum, n) => sum + n, 0)
-    if (total > MAX_SCREENSHOT_TOTAL_BYTES) return setError("Screenshots must total under 2.5 MB.")
+  const addFiles = async (files: readonly File[]) => {
+    const plan = planFiles(files, shots, MAX_SCREENSHOTS - shots.length)
+    setError(plan.error)
+    if (plan.accepted.length === 0 || plan.error === TOO_BIG) return
     const mine = draft.current
     setReading((n) => n + 1)
     try {
-      const added = await Promise.all(
-        accepted.map(async (file) => ({ name: file.name, type: file.type as BugReportScreenshot["type"], base64: await readBase64(file) }))
-      )
-      if (mine === draft.current) setShots((current) => [...current, ...added].slice(0, MAX_SCREENSHOTS))
+      const read = await Promise.all(plan.accepted.map(readShot))
+      const added = read.filter((shot) => hasMagic(shot.type, shot.base64))
+      if (mine !== draft.current) return
+      if (added.length < read.length) setError(ONLY_IMAGES)
+      setShots((current) => [...current, ...added].slice(0, MAX_SCREENSHOTS))
     } catch {
       if (mine === draft.current) setError("Could not read one of the selected files.")
     } finally {
       if (mine === draft.current) setReading((n) => n - 1)
     }
   }
+
+  // Paste works anywhere in the dialog; plain text pastes (no files) are left alone.
+  const latestAddFiles = useRef(addFiles)
+  latestAddFiles.current = addFiles
+  useEffect(() => {
+    if (!open || issueUrl) return
+    const onPaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? [])
+      if (files.length === 0) return
+      event.preventDefault()
+      void latestAddFiles.current(files)
+    }
+    document.addEventListener("paste", onPaste)
+    return () => document.removeEventListener("paste", onPaste)
+  }, [open, issueUrl])
 
   const close = () => {
     if (busy) return
@@ -150,8 +187,9 @@ export function BugReportDialog({ open, onOpenChange, chats, onSubmit }: BugRepo
                     <SelectTrigger ariaLabel="Session transcript">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent inline className="mt-1 w-full">
                       <SelectItem value={NO_TRANSCRIPT} textValue="Don't attach a transcript">Don't attach a transcript</SelectItem>
+                      {chats.length === 0 && <SelectItem value="__empty" disabled textValue="No chats yet">No chats yet</SelectItem>}
                       {chats.map((chat) => (
                         <SelectItem key={chat.id} value={chat.id} textValue={chat.label}>
                           {chat.label}
@@ -164,18 +202,33 @@ export function BugReportDialog({ open, onOpenChange, chats, onSubmit }: BugRepo
               <Field label="Screenshots" help={`PNG or JPEG, up to ${MAX_SCREENSHOTS} and 2.5 MB total. Uploaded to unlisted public links.`}>
                 {(control) => (
                   <>
-                    <input
-                      {...control}
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      multiple
-                      disabled={shots.length >= MAX_SCREENSHOTS}
-                      onChange={(event) => {
-                        void addFiles(event.target.files)
-                        event.target.value = ""
+                    <div
+                      data-testid="screenshot-dropzone"
+                      onDragOver={(event) => {
+                        event.preventDefault()
+                        setDragging(true)
                       }}
-                      className="text-[12px] text-text-body"
-                    />
+                      onDragLeave={() => setDragging(false)}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        setDragging(false)
+                        void addFiles(Array.from(event.dataTransfer.files))
+                      }}
+                      className={`flex flex-col items-start gap-1.5 rounded-xl border border-dashed px-3.5 py-3 text-[12px] text-text-body transition-colors ${dragging ? "border-text-bright/60 bg-surface" : "border-line"}`}
+                    >
+                      <span>Drop images here, paste them, or choose files.</span>
+                      <input
+                        {...control}
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        multiple
+                        disabled={shots.length >= MAX_SCREENSHOTS}
+                        onChange={(event) => {
+                          void addFiles(Array.from(event.target.files ?? []))
+                          event.target.value = ""
+                        }}
+                      />
+                    </div>
                     {shots.length > 0 && (
                       <ul className="flex flex-wrap gap-2">
                         {shots.map((shot, index) => (

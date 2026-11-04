@@ -9,7 +9,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const png = (name = "a.png") => new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" })
+const png = (name = "a.png") => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])], name, { type: "image/png" })
 
 /** Parent that owns `open`, like UserMenu does, and keeps the dialog mounted. */
 function Harness({ onSubmit }: { onSubmit: BugReportDialogProps["onSubmit"] }) {
@@ -96,5 +96,30 @@ describe("BugReportDialog", () => {
   it("caps the description at the server's 20,000 characters", () => {
     render(<Harness onSubmit={async () => ({ url: "u" })} />)
     expect((screen.getByLabelText("What happened?") as HTMLTextAreaElement).maxLength).toBe(20_000)
+  })
+
+  it("accepts images dropped on the dropzone and rejects other files", async () => {
+    render(<Harness onSubmit={async () => ({ url: "u" })} />)
+    const zone = screen.getByTestId("screenshot-dropzone")
+    const text = new File(["hi"], "notes.txt", { type: "text/plain" })
+    fireEvent.drop(zone, { dataTransfer: { files: [png("ok.png"), text] } })
+    await waitFor(() => expect(document.querySelectorAll("li img")).toHaveLength(1))
+    expect((await screen.findByRole("alert")).textContent).toBe("Only PNG or JPEG images can be attached.")
+  })
+
+  it("accepts pasted images while open and ignores text pastes", async () => {
+    render(<Harness onSubmit={async () => ({ url: "u" })} />)
+    fireEvent.paste(document, { clipboardData: { files: [] } })
+    expect(document.querySelectorAll("li img")).toHaveLength(0)
+    fireEvent.paste(document, { clipboardData: { files: [png("pasted.png")] } })
+    await waitFor(() => expect(document.querySelectorAll("li img")).toHaveLength(1))
+  })
+
+  it("rejects a file whose bytes are not the image type it claims", async () => {
+    render(<Harness onSubmit={async () => ({ url: "u" })} />)
+    const fake = new File(["<script>alert(1)</script>"], "evil.png", { type: "image/png" })
+    fireEvent.drop(screen.getByTestId("screenshot-dropzone"), { dataTransfer: { files: [fake] } })
+    expect((await screen.findByRole("alert")).textContent).toBe("Only PNG or JPEG images can be attached.")
+    expect(document.querySelectorAll("li img")).toHaveLength(0)
   })
 })
