@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react"
 import type { Usage, User } from "@jingler/core"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
-import { ChevronsUpDown, Gauge, LogIn, LogOut, Settings, Sparkles } from "lucide-react"
+import { Bug, ChevronsUpDown, Gauge, LogIn, LogOut, Settings, Sparkles } from "lucide-react"
 import { cn } from "../lib/cn.js"
 import { Avatar } from "../components/avatar.js"
 import { StatusDot } from "../components/status-dot.js"
 import { UsageLimits } from "./usage-limits.js"
+import { BugReportDialog, type BugReportDialogProps } from "./bug-report-dialog.js"
 import { WhatsNewDialog, type WhatsNewEntry } from "./whats-new-dialog.js"
 
 export interface UserMenuProps {
@@ -32,6 +33,8 @@ export interface UserMenuProps {
   version?: string
   /** Notes behind the "What's new" item; the item is hidden when absent. */
   whatsNew?: readonly WhatsNewEntry[]
+  /** Chats + submit handler behind the "Report a bug" item; the item is hidden when absent. */
+  bugReport?: Pick<BugReportDialogProps, "chats" | "onSubmit">
 }
 
 /** First letter of the display name (or email), for the monogram fallback. */
@@ -103,9 +106,11 @@ export function UserMenu({
   onSignIn,
   ghConnected = false,
   version,
-  whatsNew
+  whatsNew,
+  bugReport
 }: UserMenuProps) {
   const [whatsNewOpen, setWhatsNewOpen] = useState(false)
+  const [bugReportOpen, setBugReportOpen] = useState(false)
   const { name: displayName, detail, header, initial, image, tone } = identityOf(user, onSignIn !== undefined, version)
 
   return (
@@ -172,6 +177,10 @@ export function UserMenu({
             />
           )}
 
+          {bugReport && (
+            <MenuItem icon={<Bug size={14} />} label="Report a bug" onSelect={() => setBugReportOpen(true)} />
+          )}
+
           {user && onSignOut && (
             <>
               <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
@@ -194,6 +203,7 @@ export function UserMenu({
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+    {bugReport && <BugReportDialog open={bugReportOpen} onOpenChange={setBugReportOpen} {...bugReport} />}
     {whatsNew && <WhatsNewDialog open={whatsNewOpen} onOpenChange={setWhatsNewOpen} entries={whatsNew} />}
     </>
   )

@@ -1,3 +1,4 @@
+import { submitBugReport } from "./bug-report.js"
 import { archiveMetadataOnly, restoreMetadataOnly } from "./metadata-only-archive.js"
 import { RoutinesService } from "./routines.js"
 import { AssetWriteIoError } from "@jingler/core";
@@ -6049,6 +6050,18 @@ const CoreHandlersLayer = JinglerCoreRpcs.toLayer({
       ),
       Effect.catchAll(() => Effect.succeed({ providers: [], fetchedAt: null })),
     ),
+  "BugReport.submit": ({ title, description, chatId, screenshots }) =>
+    Effect.gen(function* () {
+      const messages = chatId
+        ? yield* TranscriptStore.list(chatId).pipe(Effect.orElseSucceed(() => []))
+        : [];
+      return yield* Effect.tryPromise({
+        try: () =>
+          submitBugReport({ title, description, appVersion: app.getVersion(), messages, screenshots }),
+        catch: (cause) =>
+          new GitError({ message: cause instanceof Error ? cause.message : "Bug report failed" }),
+      });
+    }),
   "Usage.report": () =>
     AppPaths.pipe(
       Effect.flatMap((paths) => Effect.tryPromise({

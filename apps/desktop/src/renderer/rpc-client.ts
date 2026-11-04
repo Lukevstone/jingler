@@ -779,6 +779,12 @@ export const rpc = {
     run((c) => c.Skills.list({ sessionId })),
   usageGet: (): Promise<Usage> => run((c) => c.Usage.get()),
   usageReport: (): Promise<UsageReport> => run((c) => c.Usage.report()),
+  bugReportSubmit: (report: {
+    title: string;
+    description: string;
+    chatId?: string;
+    screenshots: ReadonlyArray<{ type: "image/png" | "image/jpeg"; base64: string }>;
+  }): Promise<{ url: string }> => run((c) => c.BugReport.submit(report)),
   /** A session's context accounting — drives the meter and the Settings list. */
   contextState: (sessionId: string, chatId: string): Promise<ContextSnapshot> =>
     run((c) => c.Context.state({ sessionId, chatId })),

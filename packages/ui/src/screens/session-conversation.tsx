@@ -192,6 +192,8 @@ export interface SessionConversationProps {
   onSignOut?: () => void
   /** Open the optional sign-in dialog (sidebar footer, while signed out). */
   onSignIn?: () => void
+  /** "Report a bug" in the sidebar account menu. */
+  bugReport?: import("../composites/user-menu.js").UserMenuProps["bugReport"]
   /**
    * When set, the Settings view is open: it replaces the main pane (tabs +
    * conversation) while the sidebar stays visible. `onOpenSettings` toggles it.
@@ -474,6 +476,7 @@ export function SessionConversation(props: SessionConversationProps) {
         onOpenSettings={props.onOpenSettings}
         onSignOut={props.onSignOut}
         onSignIn={props.onSignIn}
+        bugReport={props.bugReport}
         ghConnected={props.ghConnected}
         starredRepoNames={props.starredRepoNames}
         onToggleStar={props.onToggleStar}

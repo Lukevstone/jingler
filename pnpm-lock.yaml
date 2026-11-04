@@ -212,7 +212,7 @@ importers:
         version: 19.2.7(react@19.2.7)
       react-scan:
         specifier: ^0.5.7
-        version: 0.5.7(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(esbuild@0.28.1)(eslint@10.9.1(jiti@2.7.0))(preact-render-to-string@6.6.5(preact@11.0.0-beta.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0))
+        version: 0.5.7(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(esbuild@0.28.1)(eslint@10.9.1(jiti@2.7.0))(preact-render-to-string@6.6.5)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0))
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.2
@@ -357,6 +357,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260707.2
         version: 7.0.0-dev.20260707.2
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       better-auth:
         specifier: ^1.6.23
         version: 1.6.23(@cloudflare/workers-types@5.20260801.1)(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260801.1)(@opentelemetry/api@1.9.1)(kysely@0.29.3)(postgres@3.4.9))(next@16.2.11(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0))
@@ -4704,10 +4707,12 @@ packages:
   '@smithy/core@3.31.1':
     resolution: {integrity: sha512-CyogUINxvi7C7LDsh8Syo6hVJOT9ckz4rG8dRZfTJ8r91HkMY59PnNooaj7WcHyxEkxPfBAmbgztZU+xTo76lg==}
     engines: {node: '>=18.0.0'}
+    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/core@3.38.0':
     resolution: {integrity: sha512-aLyyCnK2p4yvNA2TaM+5owXqb+rZGSiUKEsNP329AzeYnERtAz7NrlTbRsaxqmZ0ooxwoID8LMm959UGQQDIsg==}
     engines: {node: '>=18.0.0'}
+    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.4.16':
     resolution: {integrity: sha512-QfuLWAkLzptffFW980AFeHZFdqds2B64rpEd3uJ6lgs3xVn9QegGMUgUcj+4d7dRrAsya3r58ZKpku97WcFb4w==}
@@ -8503,8 +8508,8 @@ packages:
   oxc-resolver@11.24.2:
     resolution: {integrity: sha512-FY91FiDBj7ls5MsFS9jN3tjz2o0/zsdSsymlakySaBwVJZorHhkWyICLZMKxlu1R9vYo+sd3z1jwb4J8x7bNDw==}
 
-  oxlint-plugin-react-doctor@0.9.18:
-    resolution: {integrity: sha512-1mfeb/jzXnduWOZJxrvdJjvKT0pFNKrNFYcPO4ncpFAnfW41M0mLz/23lAFzHb0knNLYayEgIQ5DjI4ZfFe+DQ==}
+  oxlint-plugin-react-doctor@0.9.22:
+    resolution: {integrity: sha512-kf9MwCpK3YlAWYUyX5Zx7XYrdIbA/4lQD2QREIqC8DvmNb2I+wP8zyjL4NeGl2FO2EC1sLuYvW8ir4Ooq1Xd2A==}
     engines: {node: ^20.19.0 || >=22.13.0}
 
   oxlint@1.79.0:
@@ -8876,8 +8881,8 @@ packages:
     resolution: {integrity: sha512-aEZ9qP+/M+58x2qgfSFEWH1BxLyHe5+qkLNJOZQb5iGS017jpbRnoKhNRrXPeA6RfBrZO5wZrT9DMC1UqE1f1w==}
     engines: {node: ^20.9.0 || >=22}
 
-  react-doctor@0.9.18:
-    resolution: {integrity: sha512-4Ach00KtfnfjTBGgr2PyPgHua85vT/UfPY5sR0bHgRAc/QSu0JInA0GHCL6a7WFGMeGUrxtGnI8oqZinG44BOA==}
+  react-doctor@0.9.22:
+    resolution: {integrity: sha512-SyZOIl61VMCZ3sN7v7Vr2zCsPlyy7nNnBshtIrl0B/X+uY+rL9MGfyNhTmp/FLXfuDKEv61Y6xMguya7vn1Ulg==}
     engines: {node: ^20.19.0 || >=22.13.0}
     hasBin: true
 
@@ -12998,10 +13003,10 @@ snapshots:
 
   '@preact/signals-core@1.14.4': {}
 
-  '@preact/signals@2.11.1(preact@10.29.8(preact-render-to-string@6.6.5(preact@11.0.0-beta.0)))':
+  '@preact/signals@2.11.1(preact@10.29.8)':
     dependencies:
       '@preact/signals-core': 1.14.4
-      preact: 10.29.8(preact-render-to-string@6.6.5(preact@11.0.0-beta.0))
+      preact: 10.29.8(preact-render-to-string@6.6.5)
 
   '@protobufjs/aspromise@1.1.2': {}
 
@@ -17939,7 +17944,7 @@ snapshots:
       '@oxc-resolver/binding-win32-arm64-msvc': 11.24.2
       '@oxc-resolver/binding-win32-x64-msvc': 11.24.2
 
-  oxlint-plugin-react-doctor@0.9.18:
+  oxlint-plugin-react-doctor@0.9.22:
     dependencies:
       '@shaderfrog/glsl-parser': 7.0.1
       '@typescript-eslint/types': 8.68.0
@@ -18163,13 +18168,18 @@ snapshots:
 
   postgres@3.4.9: {}
 
+  preact-render-to-string@6.6.5(preact@10.29.8):
+    dependencies:
+      preact: 10.29.8(preact-render-to-string@6.6.5)
+    optional: true
+
   preact-render-to-string@6.6.5(preact@11.0.0-beta.0):
     dependencies:
       preact: 11.0.0-beta.0
 
-  preact@10.29.8(preact-render-to-string@6.6.5(preact@11.0.0-beta.0)):
+  preact@10.29.8(preact-render-to-string@6.6.5):
     optionalDependencies:
-      preact-render-to-string: 6.6.5(preact@11.0.0-beta.0)
+      preact-render-to-string: 6.6.5(preact@10.29.8)
 
   preact@11.0.0-beta.0: {}
 
@@ -18304,7 +18314,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  react-doctor@0.9.18(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0))(react@19.2.7):
+  react-doctor@0.9.22(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0))(react@19.2.7):
     dependencies:
       '@astrojs/compiler': 4.0.0
       '@sentry/node': 10.71.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))
@@ -18319,7 +18329,7 @@ snapshots:
       oxc-parser: 0.148.0
       oxc-resolver: 11.24.2
       oxlint: 1.81.0
-      oxlint-plugin-react-doctor: 0.9.18
+      oxlint-plugin-react-doctor: 0.9.22
       playwright-core: 1.62.1
       prompts: 2.4.2
       typescript: 5.9.3
@@ -18405,19 +18415,19 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
 
-  react-scan@0.5.7(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(esbuild@0.28.1)(eslint@10.9.1(jiti@2.7.0))(preact-render-to-string@6.6.5(preact@11.0.0-beta.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0)):
+  react-scan@0.5.7(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(esbuild@0.28.1)(eslint@10.9.1(jiti@2.7.0))(preact-render-to-string@6.6.5)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0)):
     dependencies:
       '@babel/core': 7.29.7
       '@babel/types': 7.29.7
-      '@preact/signals': 2.11.1(preact@10.29.8(preact-render-to-string@6.6.5(preact@11.0.0-beta.0)))
+      '@preact/signals': 2.11.1(preact@10.29.8)
       '@rollup/pluginutils': 5.4.0(rollup@4.62.2)
       bippy: 0.5.43(react@19.2.7)
       commander: 14.0.3
       picocolors: 1.1.1
-      preact: 10.29.8(preact-render-to-string@6.6.5(preact@11.0.0-beta.0))
+      preact: 10.29.8(preact-render-to-string@6.6.5)
       prompts: 2.4.2
       react: 19.2.7
-      react-doctor: 0.9.18(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0))(react@19.2.7)
+      react-doctor: 0.9.22(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0))(react@19.2.7)
       react-dom: 19.2.7(react@19.2.7)
       react-grab: 0.2.0(react@19.2.7)
     optionalDependencies:

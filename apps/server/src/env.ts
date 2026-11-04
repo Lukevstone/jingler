@@ -323,7 +323,17 @@ export const loadEnv = (environment: Environment = process.env) => {
     /** Deep-link the desktop app registers; magic links + OAuth bounce back here. */
     desktopRedirect: optional(environment, "DESKTOP_REDIRECT", "jingler://auth/callback"),
     /** Vercel Cron bearer used only by autonomous maintenance endpoints. */
-    cronSecret
+    cronSecret,
+    /** In-app bug reports: GitHub issue + R2 attachments. Off until every value is set. */
+    bugReport: {
+      githubToken: optional(environment, "BUG_REPORT_GITHUB_TOKEN"),
+      githubRepo: optional(environment, "BUG_REPORT_GITHUB_REPO"),
+      r2Endpoint: optional(environment, "BUG_REPORT_R2_ENDPOINT").replace(/\/$/, ""),
+      r2Bucket: optional(environment, "BUG_REPORT_R2_BUCKET"),
+      r2AccessKeyId: optional(environment, "BUG_REPORT_R2_ACCESS_KEY_ID"),
+      r2SecretAccessKey: optional(environment, "BUG_REPORT_R2_SECRET_ACCESS_KEY"),
+      r2PublicUrl: optional(environment, "BUG_REPORT_R2_PUBLIC_URL").replace(/\/$/, "")
+    }
   } as const
 
   function validateDeviceRelayConfiguration() {
