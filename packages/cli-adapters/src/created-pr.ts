@@ -2,17 +2,34 @@
 export const isGhPrCreate = (command: string): boolean => /\bgh\s+pr\s+create\b/u.test(command)
 
 /**
- * The PR number a successful `gh pr create` printed, when it belongs to one of
+ * The PR a successful `gh pr create` printed, when it belongs to one of
  * `repoSlugs` (lowercase `owner/repo`). Null for any other command, repo, or output.
  */
 export const createdPrFromToolOutput = (
   command: string,
   output: string,
   repoSlugs: ReadonlySet<string>
-): number | null => {
+): { readonly repository: string; readonly number: number } | null => {
   if (!isGhPrCreate(command)) return null
   for (const match of output.matchAll(/https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/gu)) {
-    if (repoSlugs.has(`${match[1]}/${match[2]}`.toLowerCase())) return Number(match[3])
+    const repository = `${match[1]}/${match[2]}`.toLowerCase()
+    if (repoSlugs.has(repository)) return { repository, number: Number(match[3]) }
   }
   return null
+}
+
+export type LinkCandidate = { readonly id: string; readonly slug: string | null; readonly branch: string | null }
+
+/**
+ * The checkout an agent-created PR belongs to, or null. A URL in the tool output proves nothing on
+ * its own, so the PR must be authored by the signed-in gh user, live in a checkout's origin repo,
+ * and have that checkout's branch as its head.
+ */
+export const checkoutForCreatedPr = (
+  pr: { readonly repository: string; readonly author: string | null; readonly headRefName: string | null },
+  viewerLogin: string | null,
+  checkouts: ReadonlyArray<LinkCandidate>
+): string | null => {
+  if (!viewerLogin || pr.author?.toLowerCase() !== viewerLogin.toLowerCase() || !pr.headRefName) return null
+  return checkouts.find((c) => c.slug === pr.repository.toLowerCase() && c.branch === pr.headRefName)?.id ?? null
 }

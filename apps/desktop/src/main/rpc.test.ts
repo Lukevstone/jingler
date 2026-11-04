@@ -1507,6 +1507,32 @@ describe("RPC handlers", () => {
       expect(prView).toHaveBeenCalledTimes(1);
     });
 
+    it("reads another checkout's PR from that checkout's worktree, not the active one", async () => {
+      const now = "2026-08-11T06:00:00.000Z";
+      const api = join(dir, "multi-api");
+      const web = join(dir, "multi-web");
+      mkdirSync(root, { recursive: true });
+      mkdirSync(api, { recursive: true });
+      mkdirSync(web, { recursive: true });
+      writeFileSync(join(root, "sessions.json"), JSON.stringify([{
+        id: "multi", repo: "api", branch: "feat/x", prNumber: 12, title: "Multi", status: "idle", cli: "claude", diff: { added: 0, removed: 0 },
+        costUsd: 0, tokens: 0, updatedAt: now, semanticBranchPending: false,
+        checkouts: [
+          { id: "api", repo: "api", branch: "feat/x", baseBranch: "main", worktreePath: api, workspaceMode: "worktree", prNumber: 12, prs: [{ number: 12 }] },
+          { id: "web", repo: "web", branch: "feat/x", baseBranch: "main", worktreePath: web, workspaceMode: "worktree", prNumber: 7, prs: [{ number: 7 }] },
+        ],
+        activeCheckoutId: "api",
+        chats: [{ id: "c", title: null, createdAt: now, updatedAt: now }], activeChatId: "c",
+      }]));
+      const prView = vi.fn((cwd: string, number: number) => Effect.succeed({ cwd, number }));
+      const github = Layer.mergeAll(base, SessionStore.Default, fakeGithubApi({ prView }));
+      const read = (number?: number) => Effect.runPromise(githubPr("multi", number).pipe(Effect.provide(github)));
+      await expect(read(7)).resolves.toEqual({ cwd: web, number: 7 });
+      await expect(read(12)).resolves.toEqual({ cwd: api, number: 12 });
+      await expect(read()).resolves.toEqual({ cwd: api, number: 12 });
+      await expect(read(99)).resolves.toBeNull();
+    });
+
     it("links a CLI-detected PR without enabling realtime when the App is not installed", async () => {
       const now = "2026-08-11T06:00:00.000Z";
       const worktreePath = join(dir, "cli-only-worktree");

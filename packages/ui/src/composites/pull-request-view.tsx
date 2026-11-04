@@ -603,24 +603,14 @@ return (evidence === "checks" ? (
     if (!compact) setRailOpen(false)
   }, [compact])
 
-  // No evidence tabs without a loaded PR, so sibling checkouts' checks sit above
-  // the empty/error state instead — capped so many of them can't bury it.
-  const withChecksPanel = (view: ReactNode) =>
-    checksPanel ? (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="max-h-[50%] flex-none overflow-y-auto">{checksPanel}</div>
-        {view}
-      </div>
-    ) : (
-      view
-    )
   const loadView = renderLoadState(pr, connected, busy, loadError, onRetryLoad)
-  if (loadView) return withChecksPanel(loadView)
+  // Other checkouts' checks live on the Checks tab only, so a PR loading from the dropdown starts clean.
+  if (loadView) return loadView
   if (pr === null) {
     // Workspace setup/run is independent of whether a PR exists yet — a
     // worktree session reaches the Checks tab before publishing, and that's
     // exactly when setup is most likely to still need a retry or skip.
-    return withChecksPanel(
+    return (
       <div className="relative flex min-h-0 min-w-0 flex-1">
         {renderCreatePullRequest()}
         {workflow && (

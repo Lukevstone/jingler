@@ -408,7 +408,7 @@ const prForBranch = (
   branch: string
 ): Effect.Effect<number | null, GitHubApiError, CommandExecutor.CommandExecutor> =>
   json(cwd, [
-    "pr", "list", ...repoArgs(cwd === null ? repository : null), "--state", "open",
+    "pr", "list", ...repoArgs(cwd === null ? repository : null), "--state", "open", "--author", "@me",
     "--head", branch, "--limit", "100", "--json", "number,headRefName,headRepository"
   ]).pipe(
     Effect.map((raw) => records(raw).find((value) => {
@@ -453,7 +453,8 @@ const gitAt = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<string |
 
 // ponytail: first 200 open PRs per repo; page if a repo ever has more open at once.
 const listOpenPrs = (cwd: string): Effect.Effect<ReadonlyMap<string, number>, GitHubApiError, CommandExecutor.CommandExecutor> =>
-  json(cwd, ["pr", "list", "--state", "open", "--limit", "200", "--json", "number,headRefName,isCrossRepository"]).pipe(
+  // Only the signed-in user's PRs: a teammate's PR on a same-named branch must never auto-link.
+  json(cwd, ["pr", "list", "--state", "open", "--author", "@me", "--limit", "200", "--json", "number,headRefName,isCrossRepository"]).pipe(
     Effect.map((raw) => new Map(records(raw).flatMap((pr) =>
       pr.isCrossRepository !== true && typeof pr.headRefName === "string" && typeof pr.number === "number"
         ? [[pr.headRefName, pr.number] as const]

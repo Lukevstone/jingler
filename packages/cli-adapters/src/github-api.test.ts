@@ -375,7 +375,16 @@ describe("GitHubApi remote and repository identity", () => {
             }
           },
           {
+            number: 39,
+            user: { login: "teammate" },
+            head: {
+              ref: "feat/shared-name",
+              repo: { id: 101, full_name: "acme/widget" }
+            }
+          },
+          {
             number: 41,
+            user: { login: "Octocat" },
             head: {
               ref: "feat/shared-name",
               repo: { id: 101, full_name: "acme/widget" }
@@ -386,6 +395,7 @@ describe("GitHubApi remote and repository identity", () => {
       throw new Error(`unexpected ${request.method} ${request.url}`)
     })
 
+    // A teammate's PR on the same branch in the same repo never auto-links; only the viewer's does.
     await expect(client.prForBranch("/repo", "feat/shared-name")).resolves.toBe(41)
     const request = seen.find((candidate) => pathIs(candidate, "/repos/acme/widget/pulls"))
     expect(request?.url.searchParams.get("head")).toBe("acme:feat/shared-name")

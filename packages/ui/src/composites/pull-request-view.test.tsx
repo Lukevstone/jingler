@@ -70,13 +70,16 @@ describe("PullRequestView evidence navigation", () => {
     expect(screen.getByText("other-repo-checks")).toBeTruthy()
   })
 
-  it("keeps the checks panel reachable when the active checkout has no PR or it fails to load", () => {
+  it("never stacks other checkouts' checks over a loading, failed or missing PR", () => {
     render(<WidthTierValue width={1200}><PullRequestView pr={null} connected checksPanel={<div>sibling-checks</div>} /></WidthTierValue>)
-    expect(screen.getByText("sibling-checks")).toBeTruthy()
+    expect(screen.queryByText("sibling-checks")).toBeNull()
     cleanup()
     render(<WidthTierValue width={1200}><PullRequestView pr={null} connected loadError="boom" checksPanel={<div>sibling-checks</div>} /></WidthTierValue>)
-    expect(screen.getByText("sibling-checks")).toBeTruthy()
+    expect(screen.queryByText("sibling-checks")).toBeNull()
     expect(screen.getByText("boom")).toBeTruthy()
+    cleanup()
+    render(<WidthTierValue width={1200}><PullRequestView pr={null} connected busy checksPanel={<div>sibling-checks</div>} /></WidthTierValue>)
+    expect(screen.queryByText("sibling-checks")).toBeNull()
   })
 
   it("marks only a failing check's state dot red, never its row or link", () => {

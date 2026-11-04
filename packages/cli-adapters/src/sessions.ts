@@ -1827,15 +1827,13 @@ export class SessionStore extends Effect.Service<SessionStore>()(
           })
         )
 
-      /**
-       * Link a PR the agent opened elsewhere. Becomes the active checkout's PR only
-       * when it has none; otherwise it sits in `linkedPrs`, outside every stack.
-       */
-      const linkAgentPr = (id: string, number: number) =>
+      /** Add a validated agent-created PR to the top of the checkout it was opened from (no-op when already there). */
+      const linkAgentPr = (id: string, checkoutId: string, number: number) =>
         update(id, (session) => {
-          if ((session.linkedPrs ?? []).includes(number) || sessionPrsOf(session).some((pr) => pr.number === number)) return session
-          if (activeCheckoutOf(session).prNumber === null) return editActivePrs(session, () => [{ number }])
-          return { ...session, linkedPrs: [...(session.linkedPrs ?? []), number] }
+          const checkout = checkoutsOf(session).find((c) => c.id === checkoutId)
+          if (!checkout || checkoutPrsOf(checkout).some((pr) => pr.number === number)) return session
+          const next = withCheckoutPrs(checkout, [...checkoutPrsOf(checkout), { number }])
+          return reduceCheckouts(session, { type: "update", checkoutId, patch: { prs: next.prs, prNumber: next.prNumber } })
         })
 
       /** Persist the live worktree/PR identity as one routing transition. */

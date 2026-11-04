@@ -49,8 +49,8 @@ import {
 import { FileSystem, type Path } from "@effect/platform"
 import type { CommandExecutor } from "@effect/platform"
 import { Cause, Deferred, Effect, Fiber, Mailbox, Option, Ref, Stream } from "effect"
-import { createdPrFromToolOutput, isGhPrCreate } from "./created-pr.js"
-import { gitLine } from "./command.js"
+import { checkoutForCreatedPr, createdPrFromToolOutput, isGhPrCreate } from "./created-pr.js"
+import { gitLine, runString } from "./command.js"
 import { parseGitHubRemote } from "./github-remote.js"
 import { adhdNote } from "./adhd-prompt.js"
 import { isTerminal, routeOf } from "./turn-events.js"
@@ -1893,22 +1893,36 @@ const persistTurnSessionId = (
     }
   })
 
-/** Lowercase `owner/repo` of the origin remote of the session's worktree and each checkout. */
-const sessionRepoSlugs = (session: Session) =>
-  Effect.forEach(
-    checkoutsOf(session).map((c) => c.worktreePath ?? c.repoPath),
-    (dir) =>
-      dir ? gitLine(dir, "remote", "get-url", "origin") : Effect.succeed(null)
-  ).pipe(
-    Effect.map((remotes) =>
-      new Set(
-        remotes.flatMap((url) => {
-          const remote = parseGitHubRemote(url ?? "")
-          return remote ? [`${remote.owner}/${remote.repo}`.toLowerCase()] : []
-        })
-      )
+/** Each checkout's lowercase origin `owner/repo` and live branch (the agent may have moved it). */
+const linkCandidates = (session: Session) =>
+  Effect.forEach(checkoutsOf(session), (c) => {
+    const dir = c.worktreePath ?? c.repoPath
+    if (!dir) return Effect.succeed({ id: c.id, slug: null, branch: c.branch || null })
+    return Effect.all([gitLine(dir, "remote", "get-url", "origin"), branchAt(dir)]).pipe(
+      Effect.map(([url, live]) => {
+        const remote = parseGitHubRemote(url ?? "")
+        return { id: c.id, slug: remote ? `${remote.owner}/${remote.repo}`.toLowerCase() : null, branch: live ?? (c.branch || null) }
+      })
     )
+  })
+
+const CREATED_PR_QUERY = "query($o:String!,$n:String!,$k:Int!){viewer{login} repository(owner:$o,name:$n){pullRequest(number:$k){author{login} headRefName}}}"
+
+/** Who opened the PR and from which branch, plus the gh viewer; null on any failure so nothing links. */
+const createdPrIdentity = (repository: string, number: number) => {
+  const [owner, name] = repository.split("/")
+  return runString("gh", "api", "graphql", "-f", `query=${CREATED_PR_QUERY}`, "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `k=${number}`).pipe(
+    Effect.map((raw) => {
+      try {
+        const data = (JSON.parse(raw ?? "null") as { data?: { viewer?: { login?: string }; repository?: { pullRequest?: { author?: { login?: string }; headRefName?: string } } } } | null)?.data
+        const pr = data?.repository?.pullRequest
+        return pr ? { viewerLogin: data?.viewer?.login ?? null, author: pr.author?.login ?? null, headRefName: pr.headRefName ?? null } : null
+      } catch {
+        return null
+      }
+    })
   )
+}
 
 /** Remember a `gh pr create` command at its ToolStart; take (and forget) it at its ToolEnd. */
 const takeGhPrCreate = (toolCommands: Ref.Ref<Map<string, string>>, event: StreamEvent) =>
@@ -1935,9 +1949,17 @@ const linkAgentCreatedPr = (
     const command = yield* takeGhPrCreate(toolCommands, event)
     if (command === undefined || event._tag !== "ToolEnd" || event.status !== "success") return
     const session = yield* SessionStore.get(sessionId)
-    const number = createdPrFromToolOutput(command, event.output ?? "", yield* sessionRepoSlugs(session))
-    if (number === null) return
-    yield* SessionStore.linkAgentPr(sessionId, number)
+    const candidates = yield* linkCandidates(session)
+    const slugs = new Set(candidates.flatMap((c) => (c.slug ? [c.slug] : [])))
+    const created = createdPrFromToolOutput(command, event.output ?? "", slugs)
+    if (created === null) return
+    const identity = yield* createdPrIdentity(created.repository, created.number)
+    const checkoutId = identity && checkoutForCreatedPr({ repository: created.repository, ...identity }, identity.viewerLogin, candidates)
+    if (!checkoutId) {
+      yield* Effect.logWarning(`Not linking ${created.repository}#${created.number}: author, repo or branch doesn't match this session`)
+      return
+    }
+    yield* SessionStore.linkAgentPr(sessionId, checkoutId, created.number)
     yield* announce
   }).pipe(Effect.ignore)
 
