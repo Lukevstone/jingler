@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { appShell, expect, test } from "./fixtures.js"
 
-test("QA Q1: Changes still lists work the agent already committed on the session branch", async ({ launchApp }) => {
+test("QA Q1: Changes lists only uncommitted work, not what the agent already committed", async ({ launchApp }) => {
   const { window } = await launchApp({
     configured: true,
     withRepo: true,
@@ -28,12 +28,14 @@ test("QA Q1: Changes still lists work the agent already committed on the session
       writeFileSync(join(repoPath, "committed.txt"), "already committed\n")
       git("add", "-A")
       git("-c", "user.email=e2e@jingler.dev", "-c", "user.name=e2e", "commit", "-m", "agent work", "--no-gpg-sign")
+      writeFileSync(join(repoPath, "pending.txt"), "not yet committed\n")
     }
   })
   await expect(appShell(window)).toBeVisible()
   await window.getByRole("button", { name: "Changes" }).first().click()
-  // The agent list only holds files the agent edited this run; the Explorer's Changed filter is the branch diff.
+  // Changes mirrors other IDEs: uncommitted work only; committed branch work belongs to the PR view.
   const explorer = window.getByTestId("changed-files-explorer")
   await expect(explorer).toBeVisible({ timeout: 20_000 })
-  await expect(explorer.locator('[data-item-path="committed.txt"]')).toBeVisible({ timeout: 30_000 })
+  await expect(explorer.locator('[data-item-path="pending.txt"]')).toBeVisible({ timeout: 30_000 })
+  await expect(explorer.locator('[data-item-path="committed.txt"]')).toHaveCount(0)
 })

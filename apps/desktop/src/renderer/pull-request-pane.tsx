@@ -6,7 +6,6 @@
 import type { Project, Session, SessionCheckout } from "@jingler/core"
 import { activeCheckoutOf, checkoutPrsOf, workspaceModeOf } from "@jingler/core"
 import { PullRequestView } from "@jingler/ui"
-import { PrFilesPanel } from "./pr-files-panel.js"
 import { CheckoutChecks } from "./checkout-checks.js"
 import { usePullRequest } from "./use-pull-request.js"
 import { useAdversarialReview } from "./use-adversarial-review.js"
@@ -17,6 +16,7 @@ import { scopedPrNumber } from "./subagent-scope.js"
 import { useViewedChild } from "./subagent-tab-store.js"
 import { useSubagentView } from "./use-subagent-view.js"
 import { useWorkspaceWorkflow } from "./use-workspace-workflow.js"
+import { setReviewPrLayer } from "./review-store.js"
 
 export function PullRequestPane({
   session,
@@ -141,9 +141,13 @@ export function PullRequestPane({
       onResolveThread={resolveThread}
       onReplyToThread={replyToThread}
       onOpenOnGithub={openOnGithub}
-      onOpenFiles={onOpenFiles}
+      onOpenFiles={() => {
+        // Changes reads the layer from the review store; point it at the PR on screen.
+        const own = activeCheckoutOf(session).prNumber
+        setReviewPrLayer(session.id, own, shownPr === own ? null : shownPr)
+        onOpenFiles()
+      }}
       checksPanel={<CheckoutChecks session={session} />}
-      filesPanel={<PrFilesPanel session={session} prNumber={stack.selected ?? activeCheckoutOf(session).prNumber} connected={connected} />}
       conflictedFiles={conflictedFiles}
       onResolveConflicts={resolveConflicts}
       review={{
