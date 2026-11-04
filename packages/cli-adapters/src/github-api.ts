@@ -756,10 +756,12 @@ export const makeGitHubApiClient = (options: GitHubApiClientOptions): GitHubApiC
       state: "open",
       head: `${repository.owner}:${branch}`
     }, ["pull_requests:read"])
+    const viewer = (await options.auth.viewerLogin())?.toLowerCase()
     const match = pulls.find((candidate) => {
       const head = record(candidate.head)
       const headRepository = record(head.repo)
       return (
+        viewer !== undefined && text(record(candidate.user).login)?.toLowerCase() === viewer &&
         text(head.ref) === branch &&
         String(number(headRepository.id)) === repository.id &&
         text(headRepository.full_name)?.toLowerCase() === repository.fullName.toLowerCase()

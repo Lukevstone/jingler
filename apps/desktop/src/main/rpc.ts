@@ -689,10 +689,18 @@ const resolveSession = (sessionId: string) =>
   SessionStore.get(sessionId).pipe(Effect.orElseSucceed(() => null));
 
 /** The session seen through one checkout (the active one when `checkoutId` is absent). */
-const resolveCheckoutSession = (sessionId: string, checkoutId?: string) =>
+/** The named checkout; without one, the checkout whose stack holds `prNumber` (active first), so another repo's PR reads from its own worktree. */
+const checkoutFor = (session: Session, checkoutId?: string, prNumber?: number): SessionCheckout => {
+  const named = checkoutById(session, checkoutId);
+  const holds = (c: SessionCheckout) => checkoutPrsOf(c).some((pr) => pr.number === prNumber);
+  if (checkoutId !== undefined || prNumber === undefined || holds(named)) return named;
+  return checkoutsOf(session).find(holds) ?? named;
+};
+
+const resolveCheckoutSession = (sessionId: string, checkoutId?: string, prNumber?: number) =>
   resolveSession(sessionId).pipe(
     Effect.map((session) =>
-      session && { session, checkout: checkoutById(session, checkoutId) },
+      session && { session, checkout: checkoutFor(session, checkoutId, prNumber) },
     ),
   );
 
@@ -1763,7 +1771,7 @@ const ownsPr = (session: Session, checkout: SessionCheckout, number: number): bo
 
 export const githubPr = (sessionId: string, number?: number, checkoutId?: string) =>
   Effect.gen(function* () {
-    const resolved = yield* resolveCheckoutSession(sessionId, checkoutId);
+    const resolved = yield* resolveCheckoutSession(sessionId, checkoutId, number);
     if (!resolved) return null;
     const { session, checkout } = resolved;
     if (!checkout.worktreePath || checkout.prNumber === null) return null;
@@ -1779,7 +1787,7 @@ export const githubPr = (sessionId: string, number?: number, checkoutId?: string
  */
 export const githubPrState = (sessionId: string, number?: number, checkoutId?: string) =>
   Effect.gen(function* () {
-    const resolved = yield* resolveCheckoutSession(sessionId, checkoutId);
+    const resolved = yield* resolveCheckoutSession(sessionId, checkoutId, number);
     if (!resolved) return null;
     const { session, checkout } = resolved;
     if (!checkout.worktreePath || checkout.prNumber === null) return null;
@@ -2118,7 +2126,7 @@ const layerPrNumber = (checkout: SessionCheckout, requested: number | undefined)
 /** `Github.files` handler — a PR layer's changed files (empty without a linked PR). */
 export const githubFiles = (sessionId: string, prNumber?: number, checkoutId?: string) =>
   Effect.gen(function* () {
-    const resolved = yield* resolveCheckoutSession(sessionId, checkoutId);
+    const resolved = yield* resolveCheckoutSession(sessionId, checkoutId, prNumber);
     if (!resolved) return [];
     const { checkout } = resolved;
     if (!checkout.worktreePath) return [];

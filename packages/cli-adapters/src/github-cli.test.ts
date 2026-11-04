@@ -358,7 +358,7 @@ describe("GitHubCli", () => {
     await expect(run(GitHubCli.prForWorktree("/wt-a"), handler)).resolves.toBe(7)
     await expect(run(GitHubCli.prForWorktree("/wt-b"), handler)).resolves.toBe(7)
     expect(calls.filter((call) => call.startsWith("gh "))).toEqual([
-      "gh pr list --state open --limit 200 --json number,headRefName,isCrossRepository"
+      "gh pr list --state open --author @me --limit 200 --json number,headRefName,isCrossRepository"
     ])
   })
 
