@@ -1,5 +1,13 @@
 # @jingler/ui
 
+## 0.22.2
+
+### Patch Changes
+
+- @jingler/contracts@0.22.2
+- @jingler/core@0.22.2
+- @jingler/themes@0.22.2
+
 ## 0.22.1
 
 ### Patch Changes

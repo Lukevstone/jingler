@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.22.2
+
+### Patch Changes
+
+- 6965bf3: Bug report dialog: drop or paste images to attach them (images only), and the transcript picker no longer clips.
+  - @jingler/plannotator-ext@0.22.2
+
 ## 0.22.1
 
 ### Patch Changes
