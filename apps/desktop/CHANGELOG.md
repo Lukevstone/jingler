@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.21.2
+
+### Patch Changes
+
+- 12d4a49: Fix "Plan progress could not be saved: Edit oldText was not found" after switching checkout mid-plan.
+  - @jingler/plannotator-ext@0.21.2
+
 ## 0.21.1
 
 ### Patch Changes
