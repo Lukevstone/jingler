@@ -12,6 +12,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex
@@ -488,6 +489,17 @@ export const githubSessionRouteOutbox = pgTable(
   ]
 )
 
+/** Fixed-window counters for the unauthenticated bug-report endpoint (key = hashed IP or "global"). */
+export const bugReportRateLimit = pgTable(
+  "bug_report_rate_limit",
+  {
+    key: text("key").notNull(),
+    window: bigint("window", { mode: "number" }).notNull(),
+    count: integer("count").notNull().default(0)
+  },
+  (table) => [primaryKey({ columns: [table.key, table.window] })]
+)
+
 export const schema = {
   user,
   session,
@@ -503,5 +515,6 @@ export const schema = {
   githubCallbackState,
   githubRelayRegistrationOutbox,
   githubSessionRoute,
-  githubSessionRouteOutbox
+  githubSessionRouteOutbox,
+  bugReportRateLimit
 }

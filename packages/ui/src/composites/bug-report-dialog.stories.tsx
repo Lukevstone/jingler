@@ -8,7 +8,7 @@ const meta = {
   args: {
     open: true,
     onOpenChange: () => {},
-    chats: [{ id: "c1", label: "Fix login · Untitled chat" }],
+    chats: [{ id: "c1", sessionId: "s1", label: "Fix login · Untitled chat" }],
     onSubmit: async () => ({ url: "https://github.com/acme/jingler/issues/1" })
   }
 } satisfies Meta<typeof BugReportDialog>

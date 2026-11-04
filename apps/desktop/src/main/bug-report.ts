@@ -8,8 +8,16 @@ export interface BugReportInput {
   readonly screenshots: ReadonlyArray<{ readonly type: "image/png" | "image/jpeg"; readonly base64: string }>
 }
 
-/** Text-only markdown of a chat; images and tool cards are left out. */
-export const transcriptMarkdown = (messages: ReadonlyArray<Message>): string =>
+/** Must equal MAX_TRANSCRIPT_CHARS in apps/server/src/bug-report-routes.ts. */
+export const MAX_TRANSCRIPT_CHARS = 300_000
+
+/** Text-only markdown of a chat; images and tool cards are left out. Keeps the newest turns if too long. */
+export const transcriptMarkdown = (messages: ReadonlyArray<Message>): string => {
+  const full = turnsMarkdown(messages)
+  return full.length > MAX_TRANSCRIPT_CHARS ? full.slice(-MAX_TRANSCRIPT_CHARS) : full
+}
+
+const turnsMarkdown = (messages: ReadonlyArray<Message>): string =>
   messages
     .flatMap((message) => {
       const text = message.parts.flatMap((part) => (part._tag === "Text" ? [part.text] : [])).join("\n\n")

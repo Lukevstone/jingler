@@ -688,5 +688,17 @@
     "specs": [
       "side-chat.spec.ts"
     ]
+  },
+  {
+    "paths": [
+      "packages/ui/src/composites/bug-report-dialog",
+      "packages/ui/src/composites/user-menu",
+      "apps/desktop/src/main/bug-report",
+      "apps/server/src/bug-report-routes",
+      "apps/desktop/e2e/fake-auth.ts"
+    ],
+    "specs": [
+      "bug-report.spec.ts"
+    ]
   }
 ]

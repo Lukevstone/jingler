@@ -782,6 +782,7 @@ export const rpc = {
   bugReportSubmit: (report: {
     title: string;
     description: string;
+    sessionId?: string;
     chatId?: string;
     screenshots: ReadonlyArray<{ type: "image/png" | "image/jpeg"; base64: string }>;
   }): Promise<{ url: string }> => run((c) => c.BugReport.submit(report)),

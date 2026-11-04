@@ -1252,6 +1252,7 @@ export class JinglerCoreRpcs extends RpcGroup.make(
     payload: {
       title: Schema.String,
       description: Schema.String,
+      sessionId: Schema.optional(Schema.String),
       chatId: Schema.optional(Schema.String),
       screenshots: Schema.Array(
         Schema.Struct({ type: Schema.Literal("image/png", "image/jpeg"), base64: Schema.String })

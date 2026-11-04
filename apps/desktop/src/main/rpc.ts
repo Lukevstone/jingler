@@ -2162,6 +2162,35 @@ export const reviewGet = (sessionId: string) =>
  * renderer. Metadata stays intact so the renderer can fetch each attachment
  * lazily through `Sessions.attachment`.
  */
+/** The chosen chat's messages, read locally or from the paired device that owns the session. */
+const bugReportMessages = (sessionId: string, chatId: string) =>
+  Effect.gen(function* () {
+    const session = yield* SessionStore.get(sessionId);
+    const remote = yield* RemoteSessionService;
+    return yield* routeSessionOperation(
+      session,
+      "Sessions.transcriptPage",
+      { chatId, limit: BUG_REPORT_TRANSCRIPT_MESSAGES },
+      { execute: () => TranscriptStore.list(chatId) },
+      {
+        execute: () =>
+          remote
+            .request(session, "Sessions.transcriptPage", { chatId, limit: BUG_REPORT_TRANSCRIPT_MESSAGES })
+            .pipe(
+              Effect.flatMap(
+                Schema.decodeUnknown(Schema.Struct({ messages: Schema.Array(MessageSchema) })),
+              ),
+              Effect.map((page) => page.messages),
+            ),
+      },
+    );
+  }).pipe(
+    Effect.mapError(
+      (cause) => new GitError({ message: "Could not read the selected chat's transcript", cause }),
+    ),
+  );
+const BUG_REPORT_TRANSCRIPT_MESSAGES = 500;
+
 export const withoutAttachmentData = (
   messages: ReadonlyArray<Message>,
 ): ReadonlyArray<Message> =>
@@ -6050,10 +6079,10 @@ const CoreHandlersLayer = JinglerCoreRpcs.toLayer({
       ),
       Effect.catchAll(() => Effect.succeed({ providers: [], fetchedAt: null })),
     ),
-  "BugReport.submit": ({ title, description, chatId, screenshots }) =>
+  "BugReport.submit": ({ title, description, sessionId, chatId, screenshots }) =>
     Effect.gen(function* () {
-      const messages = chatId
-        ? yield* TranscriptStore.list(chatId).pipe(Effect.orElseSucceed(() => []))
+      const messages = sessionId && chatId
+        ? yield* bugReportMessages(sessionId, chatId)
         : [];
       return yield* Effect.tryPromise({
         try: () =>
