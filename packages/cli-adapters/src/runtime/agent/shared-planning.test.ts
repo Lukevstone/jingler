@@ -40,10 +40,11 @@ const setup = async () => {
         started: observed, settled: () => Effect.succeed({ id: "changes", callId: "call", changes: [], totals: { added: 0, removed: 0 }, authoritative: true, reconciledAt: new Date().toISOString() })
       } }))
       registry.register({ id: "workspace_edit", version: "1", description: "edit", input: Schema.Struct({ path: Schema.String, oldText: Schema.String, newText: Schema.String }), risk: "mutate", roles: ["conversation"], modes: ["auto", "ask"], timeoutMs: 10_000, outputBudget: 1000, cancellable: true, idempotency: "safe",
-        execute: async ({ path, oldText, newText }) => {
-          const current = await readFile(join(root, path), "utf8")
-          if (current !== oldText) throw new Error("Concurrent file edit")
-          await writeFile(join(root, path), newText)
+        // Like the real tool: a per-call cwd wins, otherwise the turn's current checkout.
+        execute: async ({ path, oldText, newText }, { cwd = spec.cwd }) => {
+          const current = await readFile(join(cwd, path), "utf8")
+          if (current !== oldText) throw new Error("Edit oldText was not found")
+          await writeFile(join(cwd, path), newText)
         } })
       yield* script(registry, spec, bound)
     } }, (cause) => { throw cause })
@@ -503,6 +504,24 @@ describe("shared harness planning", () => {
     await turn(f.root)
     session = { id: "s", checkouts: [{ id: "co_clone", repo: "clone", repoPath: cloned, branch: "main", worktreePath: cloned }], activeCheckoutId: "co_clone" }
     await turn(cloned)
+  })
+
+  it("saves marker progress to the adopted plan after switching to a checkout with its own plan.md", async () => {
+    const f = await setup()
+    const other = await mkdtemp(join(tmpdir(), "jingler-shared-planning-b-")); roots.push(other)
+    await writeFile(join(other, "plan.md"), FLAT)
+    const checkout = (id: string, worktreePath: string) => ({ id, repo: id, branch: "main", worktreePath })
+    const checkouts = { session: () => ({ id: "s", checkouts: [checkout("a", f.root), checkout("b", other)], activeCheckoutId: "b" }) } as never
+    const adopt = f.wrap(async function* (registry, spec, context) {
+      await call(registry, spec, context, "plannotator_update_plan", { filePath: "plan.md" }); yield done
+    })
+    const mark = f.wrap(async function* () { yield { _tag: "Assistant", text: "[DONE:1]" }; yield done })
+    const turn = (runtime: AgentRuntimeShape, cwd: string) => Effect.runPromise(Stream.runCollect(runtime.run(specFor(cwd), { ...f.context, checkouts })))
+    await turn(adopt, f.root)
+    await turn(mark, other)
+    expect(await readFile(join(f.root, "plan.md"), "utf8")).toContain("- [x] first $&")
+    expect(await readFile(join(other, "plan.md"), "utf8")).toBe(FLAT)
+    expect(f.events).not.toContainEqual(expect.objectContaining({ _tag: "Assistant", text: expect.stringContaining("Could not save plan progress") }))
   })
 
 })
