@@ -87,6 +87,8 @@ import {
   GitHubTeamDiscovery,
   GitHubTeamQueue,
   GitHubTeamPrResult,
+  HomeGitHub,
+  HomePrNodeId,
   QuestionAnswer,
   ReasoningSetting,
   Repo,
@@ -1955,6 +1957,13 @@ export class JinglerReviewRpcs extends RpcGroup.make(
   Rpc.make("Github.inbox", {
     success: Schema.Array(PullRequestListItem),
     error: GitHubApiError
+  }),
+
+  /** Home: authored PRs, the review pool and the picked review PRs, via the gh CLI only. */
+  Rpc.make("Github.home", {
+    success: HomeGitHub,
+    error: GitHubApiError,
+    payload: { picked: Schema.Array(HomePrNodeId).pipe(Schema.maxItems(3)), closedSince: Schema.String.pipe(Schema.pattern(/^\d{4}-\d{2}-\d{2}$/)) },
   }),
 
   /** Organization teams for the current github.com CLI account; no App fallback. */

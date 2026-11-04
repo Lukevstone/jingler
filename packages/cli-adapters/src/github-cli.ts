@@ -10,7 +10,8 @@ import type {
   GitHubCliAccount,
   GitHubTeam,
   GitHubTeamQueue,
-  GitHubTeamPrResult
+  GitHubTeamPrResult,
+  HomeGitHub
 } from "@jingler/core"
 import { GitHubApiError } from "@jingler/core"
 import { Command, CommandExecutor } from "@effect/platform"
@@ -24,6 +25,7 @@ import {
   mapIssueListItem,
   mapLinkedPrs,
   mapIssueSummary,
+  mapHomePullRequest,
   mapPrState,
   mapPrSummary,
   mapPrView,
@@ -63,6 +65,23 @@ const ISSUE_INBOX_QUERY = `query($endCursor:String){
     }}
     pageInfo{hasNextPage endCursor}
   }
+}`
+
+const HOME_PR_FIELDS = `fragment H on PullRequest{
+  id number title url isDraft state createdAt updatedAt repository{nameWithOwner} author{login}
+  reviewDecision viewerLatestReview{submittedAt} commits(last:1){nodes{commit{statusCheckRollup{state}}}}
+}`
+
+// One call: authored PRs, the review pool (review-requested includes the viewer's teams),
+// which pool PRs ask the viewer directly, and the frozen pick read by node id.
+const HOME_QUERY = `${HOME_PR_FIELDS}
+query($open:String!,$closed:String!,$ids:[ID!]!){
+  viewer{login}
+  open:search(query:$open,type:ISSUE,first:10){issueCount nodes{...H}}
+  closed:search(query:$closed,type:ISSUE,first:10){issueCount nodes{...H}}
+  pool:search(query:"is:pr is:open review-requested:@me -author:@me draft:false sort:created-asc",type:ISSUE,first:30){nodes{...H}}
+  direct:search(query:"is:pr is:open user-review-requested:@me -author:@me draft:false",type:ISSUE,first:30){nodes{... on PullRequest{id}}}
+  picked:nodes(ids:$ids){...H}
 }`
 
 const COMMENT_FIELDS = `
@@ -159,7 +178,9 @@ const execute = (
   cwd: string | null,
   args: ReadonlyArray<string>,
   stdin?: string,
-  environment?: Readonly<Record<string, string>>
+  environment?: Readonly<Record<string, string>>,
+  /** gh exits 1 when a GraphQL field errors but still prints `data` (e.g. a deleted node id). */
+  keepPartialData = false
 ): Effect.Effect<string, GitHubApiError, CommandExecutor.CommandExecutor> =>
   ghSlots.withPermits(1)(Effect.scoped(
     Effect.gen(function* () {
@@ -177,7 +198,9 @@ const execute = (
         [decode(child.stdout), decode(child.stderr), child.exitCode],
         { concurrency: 3 }
       )
-      if (exitCode !== 0) return yield* Effect.fail(ghFailure(stderr.trim() || stdout.trim() || `gh exited ${exitCode}`, bucket))
+      if (exitCode !== 0 && !(keepPartialData && stdout.trimStart().startsWith("{\"data\":{"))) {
+        return yield* Effect.fail(ghFailure(stderr.trim() || stdout.trim() || `gh exited ${exitCode}`, bucket))
+      }
       if (bucket !== null) ghGate.clear(bucket)
       return stdout.trim()
     })
@@ -192,9 +215,10 @@ const execute = (
 const json = (
   cwd: string | null,
   args: ReadonlyArray<string>,
-  stdin?: string
+  stdin?: string,
+  keepPartialData = false
 ): Effect.Effect<unknown, GitHubApiError, CommandExecutor.CommandExecutor> =>
-  execute(cwd, args, stdin).pipe(
+  execute(cwd, args, stdin, undefined, keepPartialData).pipe(
     Effect.flatMap((output) =>
       Effect.try({
         try: () => JSON.parse(output) as unknown,
@@ -1101,6 +1125,37 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
           })
         })
         return { issues, viewerLogin: typeof viewer === "string" ? viewer : null, warnings: [] as ReadonlyArray<string> }
+      }),
+    home: (input: { readonly picked: ReadonlyArray<string>; readonly closedSince: string }) =>
+      Effect.gen(function* () {
+        const body = JSON.stringify({
+          query: HOME_QUERY,
+          variables: {
+            open: "is:pr is:open author:@me sort:updated-desc",
+            closed: `is:pr is:closed author:@me closed:>=${input.closedSince} sort:updated-desc`,
+            ids: input.picked
+          }
+        })
+        const data = jsonRecord(jsonRecord(yield* json(null, ["api", "graphql", "--input", "-"], body, true)).data)
+        const search = (key: string) => jsonRecord(data[key])
+        const nodes = (key: string) => {
+          const value = search(key).nodes
+          return Array.isArray(value) ? value : []
+        }
+        const directIds = new Set(nodes("direct").flatMap((node) => {
+          const id = jsonRecord(node).id
+          return typeof id === "string" ? [id] : []
+        }))
+        const map = (key: string) => nodes(key).flatMap((node) => mapHomePullRequest(node, directIds) ?? [])
+        const count = (key: string) => typeof search(key).issueCount === "number" ? search(key).issueCount as number : 0
+        const picked = Array.isArray(data.picked) ? data.picked : []
+        return {
+          viewerLogin: typeof jsonRecord(data.viewer).login === "string" ? jsonRecord(data.viewer).login as string : "",
+          mine: [...map("open"), ...map("closed")].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+          mineTotal: count("open") + count("closed"),
+          reviewPool: map("pool"),
+          picked: input.picked.map((_, index) => mapHomePullRequest(picked[index], directIds))
+        } satisfies HomeGitHub
       }),
     inbox: () =>
       Effect.gen(function* () {

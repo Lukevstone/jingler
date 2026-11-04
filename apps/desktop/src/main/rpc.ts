@@ -1728,6 +1728,9 @@ export const workspaceRevertFile = (input: {
  */
 export const githubPrInbox = () => GitHubApi.inbox();
 
+export const githubHome = (input: { readonly picked: ReadonlyArray<string>; readonly closedSince: string }) =>
+  GitHubApi.home(input);
+
 export const githubPrBySlug = (repository: string, number: number) =>
   GitHubApi.prViewBySlug(repository, number);
 
@@ -6214,6 +6217,7 @@ const ReviewHandlersLayer = JinglerReviewRpcs.toLayer({
     ),
   "Github.recordPrEvent": ({ sessionId, kind, number }) => recordPrEvent(sessionId, kind, number),
   "Github.inbox": () => githubPrInbox(),
+  "Github.home": (input) => githubHome(input),
   "Github.teams": () => GitHubApi.teams(),
   "Github.teamPrs": (input) => GitHubApi.teamPrs(input),
   "Github.teamPr": (input) => GitHubApi.teamPr(input),

@@ -237,6 +237,8 @@ export interface JinglerAppProps {
   allowFor?: (sessionId: string) => (() => void) | undefined
   /** Home › the MCP import card element. */
   importCard?: ReactNode
+  /** Home › To Do + My PRs; given the action that opens the pull request inbox. */
+  renderHomeToday?: (openPullRequests: (() => void) | undefined) => ReactNode
   /** Sessions whose last run was cut off by a restart. */
   interruptedSessions?: ReadonlySet<string>
   /** Live activity by session, then chat, for the sidebar tree. */
@@ -610,6 +612,11 @@ onOpenGithubSettings: providerConnections ? () => openSettings("github") : undef
         liveActivity={liveActivity}
         allowFor={props.allowFor}
         importCard={props.importCard}
+        homeToday={props.renderHomeToday?.(pullRequestsView ? () => {
+          setSettingsOpen(false)
+          setNewOpen(false)
+          setPullRequestsOpen(true)
+        } : undefined)}
         interruptedSessions={props.interruptedSessions}
         chatActivities={chatActivities}
         prStates={prStates}

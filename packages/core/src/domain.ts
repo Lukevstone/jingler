@@ -2010,6 +2010,41 @@ export const GitHubTeamPrResult = Schema.Struct({
 });
 export type GitHubTeamPrResult = Schema.Schema.Type<typeof GitHubTeamPrResult>;
 
+/** GraphQL node id of a pull request (the daily review pick stores these). */
+export const HomePrNodeId = Schema.String.pipe(Schema.pattern(/^PR_[A-Za-z0-9_-]{1,100}$/));
+
+/** One PR row on Home: My PRs, the review pool, or a picked review. */
+export const HomePullRequest = Schema.Struct({
+  id: Schema.String,
+  number: Schema.Number,
+  title: Schema.String,
+  url: Schema.String,
+  repository: Schema.String,
+  author: Schema.String,
+  state: Schema.Literal("open", "draft", "merged", "closed"),
+  checks: Schema.NullOr(PrCheckStatus),
+  reviewDecision: Schema.NullOr(Schema.Literal("approved", "changes-requested", "review-required")),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  /** When the viewer last submitted a review; null when they never have. */
+  viewerReviewedAt: Schema.NullOr(Schema.String),
+  /** Review requested of the viewer directly, not only through a team. */
+  directRequest: Schema.Boolean,
+});
+export type HomePullRequest = Schema.Schema.Type<typeof HomePullRequest>;
+
+export const HomeGitHub = Schema.Struct({
+  viewerLogin: Schema.String,
+  /** Authored PRs: open, plus merged/closed in the last 7 days; newest update first. */
+  mine: Schema.Array(HomePullRequest),
+  mineTotal: Schema.Number,
+  /** Open, non-draft PRs requesting the viewer or their teams; oldest first. */
+  reviewPool: Schema.Array(HomePullRequest),
+  /** The requested pick ids in order; null where a PR no longer resolves. */
+  picked: Schema.Array(Schema.NullOr(HomePullRequest)),
+});
+export type HomeGitHub = Schema.Schema.Type<typeof HomeGitHub>;
+
 /** A provider-neutral person reference used by issue metadata. */
 export const IssueActor = Schema.Struct({
   /** Provider-owned opaque id. */

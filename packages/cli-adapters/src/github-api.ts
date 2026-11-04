@@ -1344,6 +1344,7 @@ export class GitHubApi extends Effect.Service<GitHubApi>()("@jingler/GitHubApi",
     return {
       // Team requests never fall back to the App or change identity for writes.
       teams: () => cli.teams().pipe(Effect.provide(runtime)),
+      home: (input: Parameters<typeof cli.home>[0]) => cli.home(input).pipe(Effect.provide(runtime)),
       teamPrs: (input: Parameters<typeof cli.teamPrs>[0]) => cli.teamPrs(input).pipe(Effect.provide(runtime)),
       teamPr: (input: Parameters<typeof cli.teamPr>[0]) => cli.teamPr(input).pipe(Effect.provide(runtime)),
       teamCheckout: (input: Parameters<typeof cli.teamCheckout>[0]) => cli.teamCheckout(input).pipe(Effect.provide(runtime)),

@@ -187,6 +187,7 @@ import { ObsidianSaveToast, useObsidianVaultConfigured } from "./obsidian-save-t
 import { useDebugSessions } from "./debug-session.js";
 import { repositoryAccess } from "./github-connection-machine.js";
 import { useGitHubConnection } from "./use-github-connection.js";
+import { HomeTodayPanel } from "./home-today-panel.js";
 import { GitHubFeedbackRouter } from "./github-feedback.js";
 import { applyRelayHealthUpdate } from "./github-relay-health.js";
 
@@ -1763,6 +1764,7 @@ function AuthedApp({
         liveActivity={liveActivity}
         allowFor={decideGateAllowFor}
         importCard={homeImportCard}
+        renderHomeToday={(openPullRequests) => <HomeTodayPanel onOpenAllPrs={openPullRequests} />}
         interruptedSessions={interruptedSessions}
         chatActivities={chatActivities}
         prStates={prStates}

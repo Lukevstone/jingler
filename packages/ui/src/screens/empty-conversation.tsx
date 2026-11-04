@@ -59,8 +59,11 @@ export function EmptyConversation({
   liveActivity,
   onOpenSession,
   allowFor,
-  importCard
+  importCard,
+  today
 }: {
+  /** Home › To Do + My PRs, owned by the host (null = none). */
+  today?: ReactNode
   sessions?: ReadonlyArray<Session>
   liveActivity?: Record<string, SessionActivity>
   onOpenSession?: (sessionId: string) => void
@@ -188,6 +191,7 @@ export function EmptyConversation({
           {sessions && liveActivity && onOpenSession ? (
             <HomeCards sessions={sessions} liveActivity={liveActivity} onOpenSession={onOpenSession} allowFor={allowFor} />
           ) : null}
+          {today ?? null}
           {importCard ? <div className="w-full text-left">{importCard}</div> : null}
         </div>
       </div>

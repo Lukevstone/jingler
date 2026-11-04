@@ -150,6 +150,8 @@ export interface SessionConversationProps {
   allowFor?: (sessionId: string) => (() => void) | undefined
   /** Home › the MCP import card element. */
   importCard?: ReactNode
+  /** Home › To Do + My PRs element. */
+  homeToday?: ReactNode
   /** Sessions whose last run was cut off by a restart. */
   interruptedSessions?: ReadonlySet<string>
   /** Live activity by session, then chat, for the sidebar tree. */
@@ -358,6 +360,7 @@ export function SessionConversation(props: SessionConversationProps) {
             liveActivity={props.liveActivity}
             allowFor={props.allowFor}
             importCard={props.importCard}
+            today={props.homeToday}
             onOpenSession={props.onSelectSession}
           />)
            return (<SessionSplit

@@ -77,6 +77,7 @@ import type {
   GitHubTeamDiscovery,
   GitHubTeamQueue,
   GitHubTeamPrResult,
+  HomeGitHub,
   QuestionAnswer,
   ReasoningSetting,
   Repo,
@@ -1009,6 +1010,8 @@ export const rpc = {
     run((c) => c.Github.teamMerge(input)),
   githubPrInbox: (): Promise<ReadonlyArray<PullRequestListItem>> =>
     run((c) => c.Github.inbox()),
+  githubHome: (input: { picked: ReadonlyArray<string>; closedSince: string }): Promise<HomeGitHub> =>
+    run((c) => c.Github.home(input)),
   githubPrBySlug: (repository: string, number: number): Promise<PullRequest | null> =>
     run((c) => c.Github.prBySlug({ repository, number })),
   githubIssueInbox: (): Promise<IssueInboxResult> =>
