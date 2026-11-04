@@ -64,6 +64,42 @@ export const inboxQueryOf = (filters: typeof initialInboxFilters, team: boolean,
 
 const TYPING_DEBOUNCE_MS = 400
 
+/** Calls `onLoadMore` when the returned sentinel scrolls into view; a failed page pauses it until an explicit Retry. */
+function useLoadMoreSentinel(hasMore: boolean, error: string | null, onLoadMore: (() => void) | undefined, rows: number) {
+  const sentinel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const node = sentinel.current
+    if (!node || !hasMore || error !== null || !onLoadMore || typeof IntersectionObserver === "undefined") return
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMore() }, { rootMargin: "200px" })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasMore, error, onLoadMore, rows])
+  return sentinel
+}
+
+function LoadMoreFooter({ loadingMore, error, onLoadMore }: { loadingMore: boolean; error: string | null; onLoadMore?: () => void }) {
+  return error !== null
+    ? <InlineError message={error} onRetry={onLoadMore} />
+    : <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>
+}
+
+/** Typed fields of a serialized query; a change here waits for the debounce, anything else applies at once. */
+const typedFieldsOf = (raw: string | null) => {
+  if (raw === null) return null
+  const filters = (JSON.parse(raw) as { filters?: Partial<PrSearchFilters> }).filters
+  return JSON.stringify([filters?.text ?? "", filters?.author ?? "", filters?.label ?? ""])
+}
+
+/** Search rows are already filtered by GitHub; session rows are fetched by key, so filter them here. */
+const visibleRows = (
+  prs: ReadonlyArray<PullRequestListItem>, query: PullRequestInboxQuery,
+  facets: typeof initialInboxFilters, team: boolean, viewerLogin: string
+) => {
+  if (query.kind !== "session") return prs
+  const { filters } = inboxQueryOf({ ...facets, filter: "all" }, team) as { filters: PrSearchFilters }
+  return prs.filter((pr) => matchesPrSearch(pr, filters, viewerLogin))
+}
+
 export interface PullRequestInboxProps {
   prs: ReadonlyArray<PullRequestListItem>
   teamControls?: {
@@ -271,34 +307,17 @@ export function PullRequestInbox({
   const inboxQuery = inboxQueryOf(facets, isTeam, sessionPrKeys)
   const nextQuery = JSON.stringify(inboxQuery)
   // Search rows are already filtered by GitHub; session rows are fetched by key, so filter them here.
-  const visible = useMemo(() => {
-    const parsed = JSON.parse(nextQuery) as PullRequestInboxQuery
-    if (parsed.kind !== "session") return prs
-    const { filters } = inboxQueryOf({ ...facets, filter: "all" }, isTeam) as { filters: PrSearchFilters }
-    return prs.filter((pr) => matchesPrSearch(pr, filters, viewerLogin))
-  }, [prs, nextQuery, facets, isTeam, viewerLogin])
+  const visible = useMemo(() => visibleRows(prs, JSON.parse(nextQuery) as PullRequestInboxQuery, facets, isTeam, viewerLogin),
+    [prs, nextQuery, facets, isTeam, viewerLogin])
   const sentQuery = useRef<string | null>(null)
   useEffect(() => {
     if (!onQueryChange || nextQuery === sentQuery.current) return
     const send = () => { sentQuery.current = nextQuery; onQueryChange(JSON.parse(nextQuery) as PullRequestInboxQuery) }
-    // Only typed fields wait; chips and selects apply at once.
-    const textOf = (raw: string | null) => {
-      if (raw === null) return null
-      const filters = (JSON.parse(raw) as { filters?: Partial<PrSearchFilters> }).filters
-      return JSON.stringify([filters?.text ?? "", filters?.author ?? "", filters?.label ?? ""])
-    }
-    if (sentQuery.current === null || textOf(sentQuery.current) === textOf(nextQuery)) return send()
+    if (sentQuery.current === null || typedFieldsOf(sentQuery.current) === typedFieldsOf(nextQuery)) return send()
     const timer = setTimeout(send, TYPING_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [nextQuery, onQueryChange])
-  const sentinel = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const node = sentinel.current
-    if (!node || !hasMore || loadMoreError !== null || !onLoadMore || typeof IntersectionObserver === "undefined") return
-    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMore() }, { rootMargin: "200px" })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasMore, loadMoreError, onLoadMore, visible.length])
+  const sentinel = useLoadMoreSentinel(hasMore, loadMoreError, onLoadMore, visible.length)
   useActivateOnFocus(onActivate)
   const selectedKey = selected ? `${selected.repository}#${selected.number}` : null
   const showList = !(compact && mobileDetail && selected !== null)
@@ -343,9 +362,7 @@ export function PullRequestInbox({
           <div className="min-h-0 flex-1 overflow-y-auto">
             {getLoading()}
             {hasMore && !loading && !error && <div ref={sentinel} className="flex justify-center p-3">
-              {loadMoreError !== null
-                ? <InlineError message={loadMoreError} onRetry={onLoadMore} />
-                : <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>}
+              <LoadMoreFooter loadingMore={loadingMore} error={loadMoreError} onLoadMore={onLoadMore} />
             </div>}
           </div>
         </InboxListColumn>
