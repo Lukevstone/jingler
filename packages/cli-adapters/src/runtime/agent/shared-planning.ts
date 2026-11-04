@@ -289,7 +289,7 @@ class PlanningSession {
     await Effect.runPromise(binding.context.publishEvent({ _tag: "ToolStart", id, name: "workspace_edit", target: this.state.path }))
     const result = await executeRegistryTool({ registry: this.registry, spec: binding.spec, context: binding.context,
       id: "workspace_edit", toolCallId: id, parameters: { path: this.state.path, oldText: content, newText: next },
-      signal: binding.signal, allowed: true, onUpdate: undefined })
+      signal: binding.signal, allowed: true, onUpdate: undefined, cwd: this.state.cwd })
     await Effect.runPromise(binding.context.publishEvent({ _tag: "ToolEnd", id, status: result.details.status === "success" ? "success" : "error",
       meta: null, diff: null, preview: result.details.preview, output: registryResultText(result),
       ...(result.details.fileChanges ? { fileChanges: result.details.fileChanges } : {}) }))
