@@ -2456,7 +2456,13 @@ function renderPullRequestInbox(
     detailLoading={pullRequestInbox.detailLoading}
     detailError={pullRequestInbox.detailError}
     error={pullRequestInbox.error}
-    onRetry={pullRequestInbox.refreshInbox} />;
+    onRetry={pullRequestInbox.refreshInbox}
+    onQueryChange={pullRequestInbox.setQuery}
+    total={pullRequestInbox.total}
+    hasMore={pullRequestInbox.hasMore}
+    loadingMore={pullRequestInbox.loadingMore}
+    onLoadMore={pullRequestInbox.loadMore}
+    repositoryOptions={pullRequestInbox.repositoryOptions} />;
 }
 
 /** Map the auth machine's signed-out substate to the LoginScreen's visual state. */

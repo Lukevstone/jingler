@@ -18,16 +18,16 @@ Grilling complete. No product code changed yet.
 
 ## Delivery — 3 PRs
 
-- [ ] **PR 1 — My PRs + To Do reviews (~1 day).** New `gh` GraphQL queries in `packages/cli-adapters/src/github-cli.ts`, typed RPC (`packages/core/src/domain.ts`, `packages/contracts`, `apps/desktop/src/main/rpc.ts`), daily-pick + done-rule pure model with tests, 2-col layout in `packages/ui/src/screens/empty-conversation.tsx`, e2e extending `home.spec.ts` with `fake-github.ts`.
-  - [ ] Home data path (`Github.home`, one GraphQL call) + daily-pick model with tests.
-  - [ ] Home UI: `HomeToday` composite + renderer panel slot.
-  - [ ] PR list: team "Requested reviews" = `team-review-requested:org/slug` + `review-requested:<member>` per member (trigify/maintainers has 0 team requests on GitHub).
-  - [ ] PR list: repo filter options loaded async from `gh api user/repos`; selection adds `repo:owner/name` to the GitHub search.
-  - [ ] PR list: GraphQL cursor pages of 25 via `useInfiniteQuery`, load on scroll, personal + team. Replaces the REST team search engine.
-  - [ ] PR list: every filter goes into the GitHub query: relationship chips → `involves|author|assignee|review-requested:@me`, `repo:`, `author:`, `label:"…"`, `draft:`, search text (debounced 400ms). Team reviews = one `OR` query (aliased chunks above 5 members). Results past 1,000 → "Narrow the filters to see more".
-  - [ ] PR list: "This session" fetches linked PRs directly (`repository{pullRequest(number:)}` aliases, one call).
-  - [ ] PR list: Author/Label = type-ahead with suggestions from loaded rows; typed value applied as is.
-  - [ ] Rate limits: every page reads `rateLimit{remaining resetAt}`; under 200 left, trip the graphql `ghGate` bucket until `resetAt` and show "GitHub rate limit, resumes at HH:MM". Pages load only when the scroll sentinel comes into view; 60s cache.
+- [x] **PR 1 — My PRs + To Do reviews (~1 day).** New `gh` GraphQL queries in `packages/cli-adapters/src/github-cli.ts`, typed RPC (`packages/core/src/domain.ts`, `packages/contracts`, `apps/desktop/src/main/rpc.ts`), daily-pick + done-rule pure model with tests, 2-col layout in `packages/ui/src/screens/empty-conversation.tsx`, e2e extending `home.spec.ts` with `fake-github.ts`.
+  - [x] Home data path (`Github.home`, one GraphQL call) + daily-pick model with tests.
+  - [x] Home UI: `HomeToday` composite + renderer panel slot.
+  - [x] PR list: team "Requested reviews" = `team-review-requested:org/slug` + `review-requested:<member>` per member (trigify/maintainers has 0 team requests on GitHub).
+  - [x] PR list: repo filter options loaded async from `gh api user/repos`; selection adds `repo:owner/name` to the GitHub search.
+  - [x] PR list: GraphQL cursor pages of 25 via `useInfiniteQuery`, load on scroll, personal + team. Replaces the REST team search engine.
+  - [x] PR list: every filter goes into the GitHub query: relationship chips → `involves|author|assignee|review-requested:@me`, `repo:`, `author:`, `label:"…"`, `draft:`, search text (debounced 400ms). Team reviews = one `OR` query (aliased chunks above 5 members). Results past 1,000 → "Narrow the filters to see more".
+  - [x] PR list: "This session" fetches linked PRs directly (`repository{pullRequest(number:)}` aliases, one call).
+  - [x] PR list: Author/Label = type-ahead with suggestions from loaded rows; typed value applied as is.
+  - [x] Rate limits: every page reads `rateLimit{remaining resetAt}`; under 200 left, trip the graphql `ghGate` bucket until `resetAt` and show "GitHub rate limit, resumes at HH:MM". Pages load only when the scroll sentinel comes into view; 60s cache.
 - [ ] **PR 2 — Plan steps in To Do (~0.5 day).** Save `planFilePath` on the session, a main-process reader that parses open `- [ ]` steps, To Do group UI, tests for the parser and the restart case.
 - [ ] **PR 3 — Slack brief (~1.5 days).** Routine MCP read-tool allowlist (`packages/core/src/routines.ts` + approval path), brief prompt, JSON result parser with tests, brief card plus the "Connect Slack MCP" and "Brief needs you" states.
 

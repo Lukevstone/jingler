@@ -11,6 +11,7 @@ import type {
   PrSummary,
   PullRequest,
   PullRequestListItem,
+  PrSearchPage,
   ReviewSubmitKind,
   SessionPrStatus
 } from "@jingler/core"
@@ -21,7 +22,8 @@ import { request as octokitRequest } from "@octokit/request"
 import { Effect, Runtime } from "effect"
 import { branchAt } from "./git.js"
 import { GitHubAuth, type GitHubInstallationCredential } from "./github-auth.js"
-import { GitHubCli } from "./github-cli.js"
+import { GitHubCli, type PrSearchInput } from "./github-cli.js"
+import { matchesPrSearch } from "./github-pr-search.js"
 import { parseGitHubRemote } from "./github-remote.js"
 export { parseGitHubRemote } from "./github-remote.js"
 import {
@@ -1345,7 +1347,7 @@ export class GitHubApi extends Effect.Service<GitHubApi>()("@jingler/GitHubApi",
       // Team requests never fall back to the App or change identity for writes.
       teams: () => cli.teams().pipe(Effect.provide(runtime)),
       home: (input: Parameters<typeof cli.home>[0]) => cli.home(input).pipe(Effect.provide(runtime)),
-      teamPrs: (input: Parameters<typeof cli.teamPrs>[0]) => cli.teamPrs(input).pipe(Effect.provide(runtime)),
+      prsByKey: (keys: Parameters<typeof cli.prsByKey>[0]) => cli.prsByKey(keys).pipe(Effect.provide(runtime)),
       teamPr: (input: Parameters<typeof cli.teamPr>[0]) => cli.teamPr(input).pipe(Effect.provide(runtime)),
       teamCheckout: (input: Parameters<typeof cli.teamCheckout>[0]) => cli.teamCheckout(input).pipe(Effect.provide(runtime)),
       teamComment: (input: Parameters<typeof cli.teamComment>[0]) => cli.teamComment(input).pipe(Effect.provide(runtime)),
@@ -1358,11 +1360,17 @@ export class GitHubApi extends Effect.Service<GitHubApi>()("@jingler/GitHubApi",
         cli.repositories(),
         () => run(auth.repositories())
       ),
-      inbox: () => preferCli(cli.inbox(), async () => {
-        const repositories = await run(auth.repositories())
-        const groups = await Promise.all(repositories.map((repository) => client.listInboxPrsBySlug(repository.fullName)))
-        return groups.flat().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      }),
+      // Team search never falls back to the App; personal search filters App rows in memory (one page).
+      prSearch: (input: PrSearchInput) => input.team !== null
+        ? cli.prSearch(input).pipe(Effect.provide(runtime))
+        : preferCli(cli.prSearch(input), async (): Promise<PrSearchPage> => {
+          const [repositories, viewerLogin] = await Promise.all([run(auth.repositories()), run(auth.viewerLogin())])
+          const groups = await Promise.all(repositories.map((repository) => client.listInboxPrsBySlug(repository.fullName)))
+          const prs = groups.flat()
+            .filter((pr) => matchesPrSearch(pr, input.filters, viewerLogin ?? ""))
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+          return { prs, total: prs.length, endCursor: null, hasNextPage: false, viewerLogin, warnings: [] }
+        }),
       issueInbox: () => preferCli(cli.issueInbox(), async (): Promise<IssueInboxResult> => {
         const viewerLogin = await run(auth.viewerLogin())
         if (viewerLogin === null) {

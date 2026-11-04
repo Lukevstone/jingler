@@ -2003,12 +2003,29 @@ export const GitHubTeamDiscovery = Schema.Struct({
 });
 export type GitHubTeamDiscovery = Schema.Schema.Type<typeof GitHubTeamDiscovery>;
 
-export const GitHubTeamPrResult = Schema.Struct({
+
+/** Inbox filters; every field becomes a GitHub search qualifier so paging never hides matches. */
+export const PrSearchFilters = Schema.Struct({
+  relationship: Schema.Literal("all", "created", "assigned", "review-requested"),
+  repository: Schema.String.pipe(Schema.maxLength(201)),
+  author: Schema.String.pipe(Schema.maxLength(100)),
+  label: Schema.String.pipe(Schema.maxLength(100)),
+  draft: Schema.Literal("all", "draft", "ready"),
+  text: Schema.String.pipe(Schema.maxLength(200)),
+});
+export type PrSearchFilters = Schema.Schema.Type<typeof PrSearchFilters>;
+
+/** One cursor page of inbox results. */
+export const PrSearchPage = Schema.Struct({
   prs: Schema.Array(PullRequestListItem),
-  /** Nonempty when any discovery/search portion was incomplete. */
+  /** GitHub's match count; search only serves the first 1,000. */
+  total: Schema.Number,
+  endCursor: Schema.NullOr(Schema.String),
+  hasNextPage: Schema.Boolean,
+  viewerLogin: Schema.NullOr(Schema.String),
   warnings: Schema.Array(Schema.String),
 });
-export type GitHubTeamPrResult = Schema.Schema.Type<typeof GitHubTeamPrResult>;
+export type PrSearchPage = Schema.Schema.Type<typeof PrSearchPage>;
 
 /** GraphQL node id of a pull request (the daily review pick stores these). */
 export const HomePrNodeId = Schema.String.pipe(Schema.pattern(/^PR_[A-Za-z0-9_-]{1,100}$/));

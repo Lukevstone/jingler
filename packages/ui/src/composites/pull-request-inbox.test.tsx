@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { PullRequest, PullRequestListItem } from "@jingler/core"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WidthTierValue } from "../hooks/width-tier.js"
-import { filterPullRequests, PullRequestInbox } from "./pull-request-inbox.js"
+import { inboxQueryOf, PullRequestInbox } from "./pull-request-inbox.js"
 import { initialInboxFilters } from "./pull-request-inbox-filter-machine.js"
 
 const item = (over: Partial<PullRequestListItem> = {}): PullRequestListItem => ({
@@ -52,54 +52,37 @@ const prs = [
 afterEach(cleanup)
 
 describe("PullRequestInbox", () => {
-  it("combines case-insensitive repository, author and label with draft, text and personal relationship filters", () => {
-    const rows = [
-      item({ labels: [{ name: "Bug", color: "ff0000" }] }),
-      item({ number: 43, isDraft: true, author: { login: "Lee", avatarUrl: null }, assignedToViewer: true, labels: [{ name: "Bug", color: "ff0000" }] }),
-      item({ repository: "acme/api", number: 7, author: { login: "Lee", avatarUrl: null }, isDraft: true }),
-    ]
-    const facets = { ...initialInboxFilters, repository: "ACME/WIDGET", author: "LEE", label: "BUG", draft: "draft" as const }
-    expect(filterPullRequests(rows, "assigned", "token", "morgan", facets).map((pr) => pr.number)).toEqual([43])
-    expect(filterPullRequests(rows, "created", "", "morgan", facets)).toEqual([])
-    expect(filterPullRequests(rows, "all", "", "morgan", { ...initialInboxFilters, draft: "ready" }).map((pr) => pr.number)).toEqual([42])
-    expect(filterPullRequests(rows, "all", "", "morgan", { ...initialInboxFilters, label: "missing" })).toEqual([])
+  it("turns every facet into the search query, so paging never hides matches", () => {
+    const facets = { ...initialInboxFilters, filter: "assigned" as const, query: " token ", repository: "acme/widget", author: "lee", label: "Bug", draft: "draft" as const }
+    expect(inboxQueryOf(facets, false)).toEqual({ kind: "search", filters: {
+      relationship: "assigned", repository: "acme/widget", author: "lee", label: "Bug", draft: "draft", text: "token"
+    } })
+    // Team queues own the scope, so the personal relationship is dropped.
+    expect(inboxQueryOf(facets, true)).toMatchObject({ kind: "search", filters: { relationship: "all", author: "lee" } })
   })
 
-  it("searches BeUI filter choices, retains unfiltered options and preserves the draft when filtering and clearing", async () => {
-    const rows = [
-      item({ labels: [{ name: "Bug", color: "ff0000" }] }),
-      item({ number: 43, title: "Draft token fix", isDraft: true, author: { login: "lee", avatarUrl: null }, labels: [{ name: "Bug", color: "ff0000" }] }),
-      item({ repository: "acme/api", number: 7, title: "Update API", author: { login: "sam", avatarUrl: null } }),
-    ]
-    render(<WidthTierValue width={1200}><PullRequestInbox prs={rows} viewerLogin="morgan"
-      selected={rows[0]!} detail={detail} onSelect={() => {}} onComment={async () => {}}
+  it("This session loads the linked PRs by key instead of searching", () => {
+    expect(inboxQueryOf({ ...initialInboxFilters, filter: "this-session" }, false, new Set(["acme/widget#42"])))
+      .toEqual({ kind: "session", keys: [{ repository: "acme/widget", number: 42 }] })
+  })
+
+  it("sends filter changes to the host, offers every repository and keeps the comment draft", async () => {
+    const onQueryChange = vi.fn()
+    render(<WidthTierValue width={1200}><PullRequestInbox prs={prs} viewerLogin="morgan" total={40} hasMore
+      repositoryOptions={["acme/remote-only"]} onQueryChange={onQueryChange}
+      selected={prs[0]!} detail={detail} onSelect={() => {}} onComment={async () => {}}
     /></WidthTierValue>)
+    expect(onQueryChange).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "search" }))
     const composer = screen.getByPlaceholderText("Leave a comment…")
     fireEvent.change(composer, { target: { value: "Keep this draft" } })
     fireEvent.click(screen.getByRole("button", { name: "Filter by repository" }))
-    fireEvent.change(screen.getByRole("textbox", { name: "Search repository options" }), { target: { value: "widget" } })
-    expect(screen.queryByRole("option", { name: "acme/api" })).toBeNull()
-    fireEvent.click(screen.getByRole("option", { name: "acme/widget" }))
-    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull())
-    fireEvent.click(screen.getByRole("button", { name: "Filter by author" }))
-    expect(screen.getByRole("option", { name: "sam" })).toBeTruthy()
-    fireEvent.click(screen.getByRole("option", { name: "lee" }))
-    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull())
-    fireEvent.click(screen.getByRole("button", { name: "Filter by label" }))
-    fireEvent.click(screen.getByRole("option", { name: "Bug" }))
-    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull())
-    fireEvent.click(screen.getByRole("button", { name: "Filter by draft status" }))
-    fireEvent.click(screen.getByRole("option", { name: "Draft" }))
-    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull())
-    fireEvent.change(screen.getByPlaceholderText("Search pull requests"), { target: { value: "Draft token" } })
-    expect(screen.getByText("1 of 3 loaded PRs")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /Update API/ })).toBeNull()
+    fireEvent.click(screen.getByRole("option", { name: "acme/remote-only" }))
+    await waitFor(() => expect(onQueryChange).toHaveBeenLastCalledWith({ kind: "search", filters: expect.objectContaining({ repository: "acme/remote-only" }) }))
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter by label" }), { target: { value: "Bug" } })
+    await waitFor(() => expect(onQueryChange).toHaveBeenLastCalledWith({ kind: "search", filters: expect.objectContaining({ label: "Bug" }) }))
+    expect(screen.getByText("Showing 3 of 40")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy()
     expect(composer).toHaveProperty("value", "Keep this draft")
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }))
-    expect(screen.getByText("3 of 3 loaded PRs")).toBeTruthy()
-    expect(screen.getByRole("button", { name: /Update API/ })).toBeTruthy()
-    expect(composer).toHaveProperty("value", "Keep this draft")
-    expect(screen.getByPlaceholderText("Search pull requests")).toHaveProperty("value", "")
   })
 
   it("shows team queues independently of personal relationships and exposes partial results/refresh", () => {
@@ -125,13 +108,6 @@ describe("PullRequestInbox", () => {
     expect(onTeam).toHaveBeenCalledWith(null)
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
     expect(onRefresh).toHaveBeenCalledTimes(1)
-  })
-
-  it("filters by viewer relationship and search", () => {
-    expect(filterPullRequests(prs, "created", "", "morgan").map((pr) => pr.number)).toEqual([42])
-    expect(filterPullRequests(prs, "assigned", "", "morgan").map((pr) => pr.number)).toEqual([7])
-    expect(filterPullRequests(prs, "review-requested", "", "morgan").map((pr) => pr.number)).toEqual([9])
-    expect(filterPullRequests(prs, "all", "api", "morgan").map((pr) => pr.number)).toEqual([7])
   })
 
   it("selects a pull request from the list", () => {
@@ -242,12 +218,14 @@ describe("PullRequestInbox", () => {
     expect(screen.getByText("No pull requests match this view")).toBeTruthy()
   })
 
-  it("offers Clear filters on an empty filtered view, and clearing brings the rows back", () => {
-    render(<WidthTierValue width={1200}><PullRequestInbox prs={[item({ author: { login: "lee", avatarUrl: null } })]} viewerLogin="morgan" selected={null} detail={null} onSelect={() => {}} /></WidthTierValue>)
+  it("offers Clear filters on an empty filtered view, and clearing resets the query", () => {
+    const onQueryChange = vi.fn()
+    render(<WidthTierValue width={1200}><PullRequestInbox prs={[]} viewerLogin="morgan" selected={null} detail={null} onSelect={() => {}} onQueryChange={onQueryChange} /></WidthTierValue>)
     fireEvent.click(screen.getByRole("radio", { name: "Created" }))
+    expect(onQueryChange).toHaveBeenLastCalledWith({ kind: "search", filters: expect.objectContaining({ relationship: "created" }) })
     const empty = screen.getByText("No pull requests match this view").parentElement as HTMLElement
     fireEvent.click(within(empty).getByRole("button", { name: "Clear filters" }))
-    expect(screen.getByRole("button", { name: /Fix token refresh/ })).toBeTruthy()
+    expect(onQueryChange).toHaveBeenLastCalledWith({ kind: "search", filters: expect.objectContaining({ relationship: "all" }) })
   })
 
   it("replaces the list with detail on small screens and returns", () => {

@@ -10,14 +10,16 @@ import type {
   GitHubCliAccount,
   GitHubTeam,
   GitHubTeamQueue,
-  GitHubTeamPrResult,
-  HomeGitHub
+  HomeGitHub,
+  PrSearchFilters,
+  PrSearchPage
 } from "@jingler/core"
 import { GitHubApiError } from "@jingler/core"
 import { Command, CommandExecutor } from "@effect/platform"
 import type { PlatformError } from "@effect/platform/Error"
 import { Effect, Stream } from "effect"
 import { MAX_IN_FLIGHT, makeRateGate } from "./github-rate-gate.js"
+import { PR_PAGE_SIZE, RATE_LIMIT_FLOOR, buildPrSearchQuery, type TeamScope } from "./github-pr-search.js"
 import {
   jsonRecord,
   mapApiFiles,
@@ -41,19 +43,6 @@ const PR_FIELDS = [
   "labels", "reviews", "comments", "reviewRequests", "statusCheckRollup", "mergeable",
   "mergeStateStatus", "mergedAt", "url"
 ].join(",")
-
-const INBOX_QUERY = `query($endCursor:String){
-  viewer{login}
-  search(query:"is:pr is:open involves:@me sort:updated-desc",type:ISSUE,first:100,after:$endCursor){
-    nodes{... on PullRequest{
-      assignees(first:100){nodes{login}} author{login avatarUrl} comments{totalCount} isDraft
-      labels(first:100){nodes{name color}} number repository{nameWithOwner}
-      reviewRequests(first:100){nodes{requestedReviewer{... on User{login}}}}
-      state title updatedAt url
-    }}
-    pageInfo{hasNextPage endCursor}
-  }
-}`
 
 const ISSUE_INBOX_QUERY = `query($endCursor:String){
   viewer{login}
@@ -82,6 +71,21 @@ query($open:String!,$closed:String!,$ids:[ID!]!){
   pool:search(query:"is:pr is:open review-requested:@me -author:@me draft:false sort:created-asc",type:ISSUE,first:30){nodes{...H}}
   direct:search(query:"is:pr is:open user-review-requested:@me -author:@me draft:false",type:ISSUE,first:30){nodes{... on PullRequest{id}}}
   picked:nodes(ids:$ids){...H}
+}`
+
+const LIST_PR_FIELDS = `fragment L on PullRequest{
+  assignees(first:20){nodes{login}} author{login avatarUrl} comments{totalCount} isDraft additions deletions
+  headRefName baseRefName labels(first:20){nodes{name color}} number repository{nameWithOwner}
+  reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} state title updatedAt url
+}`
+
+// ISSUE_ADVANCED accepts OR groups (team + members) and cursor paging; ~1 GraphQL point per page.
+const PR_SEARCH_QUERY = `${LIST_PR_FIELDS}
+query($q:String!,$after:String){
+  viewer{login} rateLimit{remaining resetAt}
+  search(query:$q,type:ISSUE_ADVANCED,first:${PR_PAGE_SIZE},after:$after){
+    issueCount nodes{...L} pageInfo{hasNextPage endCursor}
+  }
 }`
 
 const COMMENT_FIELDS = `
@@ -569,8 +573,8 @@ const validateTeamPr = (repository: string, number: number): void => {
 const teamCliError = (error: GitHubApiError): GitHubApiError => {
   if (error.reason === "validation") return error
   const message = error.message
-  if (/rate limit|retry-after|secondary rate/i.test(message)) {
-    return new GitHubApiError({ reason: "unavailable", message: "GitHub CLI rate limit reached. Wait for the GitHub limit to reset before refreshing; no automatic retry is running." })
+  if (error.reason === "rate-limited" || /rate limit|retry-after|secondary rate/i.test(message)) {
+    return new GitHubApiError({ reason: "rate-limited", message: "GitHub's rate limit was reached.", ...(error.retryAt ? { retryAt: error.retryAt } : {}) })
   }
   if (/SSO|SAML/i.test(message)) {
     return new GitHubApiError({ reason: "repository-access", message: "Authorize your GitHub CLI credentials for this organization's SSO, then refresh." })
@@ -636,154 +640,6 @@ const discoverTeams = () => teamPages("user/teams").pipe(Effect.flatMap((rows) =
   catch: (error) => error instanceof GitHubApiError ? error : teamValidation("GitHub CLI returned invalid teams."),
 })))
 
-const searchItem = (row: Json, viewer: string): PullRequestListItem => {
-  const url = typeof row.html_url === "string" ? row.html_url : ""
-  const match = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+)\/pull\/(\d+)$/.exec(url)
-  if (!match || typeof row.number !== "number" || row.number !== Number(match[2]) ||
-      typeof row.title !== "string" || typeof row.updated_at !== "string" || typeof row.draft !== "boolean") {
-    throw teamValidation("GitHub CLI returned an invalid PR row. Refresh to retry.")
-  }
-  return mapPullRequestListItem({ ...row, author: row.user, isDraft: row.draft }, match[1]!, viewer)
-}
-
-const searchPage = (q: string, page: number, viewer: string) =>
-  teamApi("search/issues", ["per_page=100", `page=${page}`, "sort=updated", "order=desc", `q=${q}`]).pipe(
-    Effect.flatMap((raw) => Effect.try({
-      try: () => {
-        const result = jsonRecord(raw)
-        if (typeof result.total_count !== "number" || !Number.isSafeInteger(result.total_count) || result.total_count < 0 ||
-            typeof result.incomplete_results !== "boolean" || !Array.isArray(result.items)) {
-          throw teamValidation("GitHub CLI returned invalid search pagination. Refresh to retry.")
-        }
-        return { total: result.total_count, incomplete: result.incomplete_results, prs: result.items.map((row) => searchItem(jsonRecord(row), viewer)) }
-      },
-      catch: (error) => error instanceof GitHubApiError ? error : teamValidation("GitHub CLI returned invalid search data. Refresh to retry."),
-    }))
-  )
-
-type SearchTask = { from: number; to: number; page: number }
-type SearchProgress = {
-  tasks: Map<string, SearchTask>
-  prs: Map<string, PullRequestListItem>
-  // Historical rows stay visible, but only this attempt can satisfy the search count.
-  observed: Map<string, PullRequestListItem>
-  // Keep a historical ceiling warning until a fresh attempt verifies completeness.
-  previousCeiling: boolean
-  counts: Map<string, number>
-  completed: Set<string>
-  ceiling: boolean
-}
-type QueueProgress = Map<string, SearchProgress>
-const hasUnfinishedSearches = (progress: QueueProgress | undefined) =>
-  progress !== undefined && [...progress.values()].some((search) => search.tasks.size > 0)
-const taskKey = (task: SearchTask) => `${task.from}/${task.to}/${task.page}`
-const prKey = (pr: PullRequestListItem) => `${pr.repository.toLowerCase()}#${pr.number}`
-const moveWorkToEnd = <T>(queue: Map<string, T>, key: string) => {
-  const value = queue.get(key)
-  if (value !== undefined) { queue.delete(key); queue.set(key, value) }
-}
-const newSearchProgress = (): SearchProgress => {
-  const task = { from: 0, to: Math.floor(Date.now() / 1000), page: 1 }
-  return { tasks: new Map([[taskKey(task), task]]), prs: new Map(), observed: new Map(), previousCeiling: false, counts: new Map(), completed: new Set(), ceiling: false }
-}
-
-const splitSearchRange = (progress: SearchProgress, task: SearchTask): void => {
-  for (const [key, pending] of progress.tasks) {
-    if (pending.from === task.from && pending.to === task.to) progress.tasks.delete(key)
-  }
-  progress.counts.delete(`${task.from}/${task.to}`)
-  const middle = Math.floor((task.from + task.to) / 2)
-  for (const [from, to] of [[task.from, middle], [middle + 1, task.to]] as const) {
-    const child = { from, to, page: 1 }
-    progress.tasks.set(taskKey(child), child)
-  }
-}
-
-const rememberSearchPage = (progress: SearchProgress, task: SearchTask, result: {
-  total: number; incomplete: boolean; prs: PullRequestListItem[]
-}): void => {
-  for (const pr of result.prs) {
-    progress.prs.set(prKey(pr), pr)
-    progress.observed.set(prKey(pr), pr)
-  }
-  const range = `${task.from}/${task.to}`
-  if (result.total > 1000 && task.from < task.to) {
-    splitSearchRange(progress, task)
-    return
-  }
-  progress.counts.set(range, result.total)
-  if (!result.incomplete) {
-    progress.tasks.delete(taskKey(task))
-    progress.completed.add(taskKey(task))
-  }
-  if (task.page === 1) {
-    for (let page = 2; page <= Math.ceil(Math.min(result.total, 1000) / 100); page++) {
-      const next = { ...task, page }
-      if (!progress.completed.has(taskKey(next))) progress.tasks.set(taskKey(next), next)
-    }
-  }
-  if (result.total > 1000) progress.ceiling = true
-}
-
-const recordSearchCooldown = (error: GitHubApiError, cooldowns: Map<string, number>, accountId: string) => Effect.gen(function* () {
-  const limit = yield* teamApi("rate_limit").pipe(Effect.either)
-  const search = limit._tag === "Right" ? jsonRecord(jsonRecord(jsonRecord(limit.right).resources).search) : {}
-  const retryAfter = /retry-after[=: ]+(\d+)/i.exec(error.message)?.[1]
-  const reset = search.remaining === 0 && typeof search.reset === "number" && Number.isFinite(search.reset) && search.reset * 1000 > Date.now()
-    ? search.reset * 1000 : Date.now() + 60_000
-  cooldowns.set(accountId, Math.max(reset, Date.now() + (retryAfter ? Number(retryAfter) * 1000 : 0)))
-})
-
-const retryMissingSearch = (progress: SearchProgress, warnings: string[]): void => {
-  const expected = [...progress.counts.values()].reduce((sum, count) => sum + count, 0)
-  if (progress.tasks.size === 0 && !progress.ceiling && progress.observed.size < expected) {
-    const retry = { from: 0, to: Math.floor(Date.now() / 1000), page: 1 }
-    progress.counts.clear()
-    progress.completed.clear()
-    progress.observed.clear()
-    progress.tasks.set(taskKey(retry), retry)
-    warnings.push("GitHub returned fewer PRs than its search count. This queue is incomplete; refresh to retry.")
-  } else if (progress.tasks.size === 0 && !progress.ceiling) {
-    progress.prs = new Map(progress.observed)
-    progress.previousCeiling = false
-  }
-}
-
-const searchTeamPrs = (
-  query: string, viewer: string, progress: SearchProgress, warnings: string[],
-  cooldowns: Map<string, number>, accountId: string
-) => Effect.gen(function* () {
-  const attempted = new Set<string>()
-  let limited = false
-  let processed = false
-  const date = (seconds: number) => new Date(seconds * 1000).toISOString().replace(".000Z", "Z")
-  for (;;) {
-    const entry = [...progress.tasks].find(([key]) => !attempted.has(key))
-    if (!entry) break
-    const [key, task] = entry
-    attempted.add(key)
-    const q = `${query} created:${date(task.from)}..${date(task.to)}`
-    const result = yield* searchPage(q, task.page, viewer).pipe(Effect.either)
-    if (result._tag === "Left") {
-      warnings.push(teamCliError(result.left).message)
-      if (/rate limit|retry-after|secondary rate/i.test(result.left.message)) {
-        limited = true
-        yield* recordSearchCooldown(result.left, cooldowns, accountId)
-        break
-      }
-      processed = true
-      moveWorkToEnd(progress.tasks, key)
-      continue
-    }
-    processed = true
-    rememberSearchPage(progress, task, result.right)
-    moveWorkToEnd(progress.tasks, key)
-    if (result.right.incomplete) warnings.push("GitHub timed out part of the search. This queue is incomplete; Refresh resumes missing results.")
-  }
-  retryMissingSearch(progress, warnings)
-  return { limited, processed }
-})
-
 type DiscoveryCache = Map<string, { rows: ReadonlyArray<Json>; at: number }>
 const cachedTeamPages = (accountId: string, endpoint: string, refresh: boolean, cache: DiscoveryCache) =>
   Effect.gen(function* () {
@@ -795,140 +651,141 @@ const cachedTeamPages = (accountId: string, endpoint: string, refresh: boolean, 
     return rows
   })
 
-const repositoryQueries = (rows: ReadonlyArray<Json>, qualifier = "") => rows.map((row) => {
-  if (typeof row.full_name !== "string") throw teamValidation("GitHub CLI returned an invalid team repository.")
-  validateTeamPr(row.full_name, 1)
-  return `is:pr is:open repo:${row.full_name}${qualifier}`
-})
-
-const teamQueries = (
-  account: GitHubCliAccount, organization: string, slug: string, queue: GitHubTeamQueue,
-  refresh: boolean, discoveryCache: DiscoveryCache, warnings: string[]
-) => Effect.gen(function* () {
-  const endpoint = `orgs/${organization}/repos`
-  const orgRepos = queue === "repositories" ? []
-    : yield* cachedTeamPages(account.id, endpoint, refresh, discoveryCache).pipe(Effect.catchAll((error) => Effect.sync(() => {
-        warnings.push(`Could not verify GitHub's repository search scope. Results may be incomplete. ${teamCliError(error).message}`)
-        return discoveryCache.get(`${account.id}/${endpoint}`)?.rows ?? []
-      })))
-  if (queue === "reviews") {
-    const qualifier = ` team-review-requested:${organization}/${slug}`
-    return { queries: orgRepos.length > 4000 ? repositoryQueries(orgRepos, qualifier)
-      : [`is:pr is:open org:${organization}${qualifier}`], authors: null }
-  }
-  const rows = yield* cachedTeamPages(account.id, `orgs/${organization}/teams/${slug}/${queue === "authored" ? "members" : "repos"}`, refresh, discoveryCache)
-  if (queue === "repositories") return { queries: repositoryQueries(rows), authors: null }
-  const members = rows.map((row) => {
-    if (typeof row.login !== "string" || !USER_LOGIN.test(row.login)) throw teamValidation("GitHub CLI returned an invalid team member.")
-    return row.login
-  })
-  // One repository search plus exact author filtering avoids a members × repositories request explosion.
-  return { queries: orgRepos.length > 4000 ? repositoryQueries(orgRepos)
-    : members.map((login) => `is:pr is:open org:${organization} author:${login}`),
-    authors: orgRepos.length > 4000 ? new Set(members.map((login) => login.toLowerCase())) : null }
-})
-
-const resumeSearchQueue = (currentQueries: ReadonlyArray<string>, previous: QueueProgress | undefined, refresh: boolean): QueueProgress => {
-  const queries = new Set(currentQueries)
-  const progress: QueueProgress = new Map([...(previous ?? [])].filter(([query, search]) => queries.has(query) && search.tasks.size > 0))
-  for (const query of queries) {
-    if (progress.has(query)) continue
-    const old = previous?.get(query)
-    const search = old && !refresh ? old : newSearchProgress()
-    if (old && refresh) {
-      search.prs = new Map(old.prs)
-      search.previousCeiling = old.ceiling || old.previousCeiling
-    }
-    progress.set(query, search)
-  }
-  return progress
+const mapListNode = (value: unknown, viewerLogin: string | null): ReadonlyArray<PullRequestListItem> => {
+  const row = jsonRecord(value)
+  const repository = jsonRecord(row.repository).nameWithOwner
+  if (typeof repository !== "string") return []
+  const reviewRequests = jsonRecord(row.reviewRequests).nodes
+  return [mapPullRequestListItem({
+    ...row,
+    assignees: jsonRecord(row.assignees).nodes,
+    comments: jsonRecord(row.comments).totalCount,
+    labels: jsonRecord(row.labels).nodes,
+    reviewRequests: Array.isArray(reviewRequests)
+      ? reviewRequests.map((request) => jsonRecord(jsonRecord(request).requestedReviewer))
+      : []
+  }, repository, viewerLogin)]
 }
 
-const advanceSearchQueue = (progress: QueueProgress, account: GitHubCliAccount, warnings: string[], cooldowns: Map<string, number>) =>
-  Effect.gen(function* () {
-    // Snapshot iteration lets partially successful queries move behind untouched work.
-    const pendingSearches = [...progress].filter(([, search]) => search.tasks.size > 0)
-    for (const [query, searchProgress] of pendingSearches) {
-      if ((cooldowns.get(account.id) ?? 0) > Date.now()) {
-        warnings.push("GitHub CLI rate limit reached. Wait for the quota reset, then Refresh resumes missing results.")
-        break
-      }
-      const result = yield* searchTeamPrs(query, account.login, searchProgress, warnings, cooldowns, account.id)
-      if (result.processed || !result.limited) moveWorkToEnd(progress, query)
-      if (result.limited) break
-    }
-  })
+/** Stop paging before GitHub does: under the floor, the graphql bucket waits for the reset. */
+const noteRateLimit = (data: Json): void => {
+  const limit = jsonRecord(data.rateLimit)
+  if (typeof limit.remaining === "number" && limit.remaining < RATE_LIMIT_FLOOR && typeof limit.resetAt === "string") {
+    ghGate.trip("graphql", limit.resetAt)
+  }
+}
 
-const teamQueuePrs = (
-  account: GitHubCliAccount,
-  organization: string,
-  slug: string,
-  queue: GitHubTeamQueue,
-  refresh: boolean,
-  discoveryCache: DiscoveryCache,
-  queues: Map<string, QueueProgress>,
-  cooldowns: Map<string, number>
-): Effect.Effect<GitHubTeamPrResult, GitHubApiError, CommandExecutor.CommandExecutor> =>
-  Effect.gen(function* () {
-    validateTeam(organization, slug)
-    if (!["reviews", "authored", "repositories"].includes(queue)) return yield* Effect.fail(teamValidation("Choose a valid team queue."))
-    const membership = jsonRecord(yield* teamApi(`orgs/${organization}/teams/${slug}/memberships/${account.login}`))
-    if (membership.state !== "active") return yield* Effect.fail(teamValidation("You are no longer an active member of this team. Refresh teams."))
-    const warnings: string[] = []
-    const plan = yield* teamQueries(account, organization, slug, queue, refresh, discoveryCache, warnings)
-    const key = `${account.id}/${organization.toLowerCase()}/${slug.toLowerCase()}/${queue}`
-    const progress = resumeSearchQueue(plan.queries, queues.get(key), refresh)
-    // Incomplete work intentionally has no TTL: quota reset must not restart completed pages.
-    queues.set(key, progress)
-    yield* advanceSearchQueue(progress, account, warnings, cooldowns)
-    if (hasUnfinishedSearches(progress)) {
-      warnings.push("Some searches are unfinished. Refresh resumes missing results without restarting completed pages.")
-    }
-    if ([...progress.values()].some((search) => search.ceiling || search.previousCeiling)) {
-      warnings.push("Some PRs share the same creation second and exceed GitHub's search limit. This queue is incomplete.")
-    }
-    if (!hasUnfinishedSearches(progress)) queues.delete(key)
-    const prs = [...progress.values()].flatMap((search) => [...search.prs.values()])
-      .filter((pr) => plan.authors === null || plan.authors.has(pr.author.login.toLowerCase()))
+const viewerOf = (data: Json): string | null => {
+  const login = jsonRecord(data.viewer).login
+  return typeof login === "string" ? login : null
+}
+
+const graphqlData = (query: string, variables: Record<string, unknown>, keepPartialData = false) =>
+  json(null, ["api", "graphql", "--hostname", "github.com", "--input", "-"], JSON.stringify({ query, variables }), keepPartialData).pipe(
+    Effect.map((raw) => {
+      const data = jsonRecord(jsonRecord(raw).data)
+      noteRateLimit(data)
+      return data
+    })
+  )
+
+const emptyPage = (warning: string): PrSearchPage =>
+  ({ prs: [], total: 0, endCursor: null, hasNextPage: false, viewerLogin: null, warnings: [warning] })
+
+const searchPrs = (query: string, after: string | null) => graphqlData(PR_SEARCH_QUERY, { q: query, after }).pipe(
+  Effect.map((data): PrSearchPage => {
+    const search = jsonRecord(data.search)
+    const pageInfo = jsonRecord(search.pageInfo)
+    const viewerLogin = viewerOf(data)
+    const total = typeof search.issueCount === "number" ? search.issueCount : 0
     return {
-      prs: [...new Map(prs.map((pr) => [prKey(pr), pr])).values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-      warnings: [...new Set(warnings)],
+      prs: (Array.isArray(search.nodes) ? search.nodes : []).flatMap((node) => mapListNode(node, viewerLogin)),
+      total,
+      endCursor: typeof pageInfo.endCursor === "string" ? pageInfo.endCursor : null,
+      hasNextPage: pageInfo.hasNextPage === true,
+      viewerLogin,
+      warnings: total > 1000 ? ["GitHub search serves the first 1,000 matches. Narrow the filters to see more."] : []
     }
   })
+)
 
-const pruneRemovedTeamProgress = (
-  accountId: string, teams: ReadonlyArray<GitHubTeam>, queues: Map<string, QueueProgress>, discoveryCache: DiscoveryCache
-): void => {
-  const memberships = new Set(teams.map((team) => `${accountId}/${team.organization.toLowerCase()}/${team.slug.toLowerCase()}`))
-  for (const key of queues.keys()) {
-    if (key.startsWith(`${accountId}/`) && !memberships.has(key.slice(0, key.lastIndexOf("/")))) queues.delete(key)
-  }
-  for (const key of discoveryCache.keys()) {
-    const match = /^(\d+)\/orgs\/([^/]+)\/teams\/([^/]+)\//.exec(key)
-    if (match?.[1] === accountId && !memberships.has(`${accountId}/${match[2]!.toLowerCase()}/${match[3]!.toLowerCase()}`)) discoveryCache.delete(key)
-  }
+export type PrSearchInput = {
+  readonly filters: PrSearchFilters
+  readonly team: { readonly accountId: string; readonly organization: string; readonly teamSlug: string; readonly queue: GitHubTeamQueue } | null
+  readonly after: string | null
+  readonly refresh: boolean
 }
+
+const teamScope = (
+  account: GitHubCliAccount, team: NonNullable<PrSearchInput["team"]>, firstPage: boolean, refresh: boolean, cache: DiscoveryCache
+) => Effect.gen(function* () {
+  validateTeam(team.organization, team.teamSlug)
+  // One membership check per list load, not per page.
+  if (firstPage) {
+    const membership = jsonRecord(yield* teamApi(`orgs/${team.organization}/teams/${team.teamSlug}/memberships/${account.login}`))
+    if (membership.state !== "active") return yield* Effect.fail(teamValidation("You are no longer an active member of this team. Refresh teams."))
+  }
+  const repositories = team.queue === "repositories"
+  const rows = yield* cachedTeamPages(account.id, `orgs/${team.organization}/teams/${team.teamSlug}/${repositories ? "repos" : "members"}`, refresh, cache)
+  const values = rows.flatMap((row) => {
+    const value = repositories ? row.full_name : row.login
+    return typeof value === "string" ? [value] : []
+  })
+  return {
+    organization: team.organization, slug: team.teamSlug, queue: team.queue,
+    members: repositories ? [] : values, repositories: repositories ? values : []
+  } satisfies TeamScope
+})
+
+const searchQuery = (filters: PrSearchFilters, scope: TeamScope | null) =>
+  Effect.try({ try: () => buildPrSearchQuery(filters, scope), catch: (error) => error instanceof GitHubApiError ? error : teamValidation("Invalid filters.") })
 
 export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli", {
   accessors: true,
   effect: Effect.sync(() => {
     const discoveryCache: DiscoveryCache = new Map()
-    const queues = new Map<string, QueueProgress>()
-    const cooldowns = new Map<string, number>()
-    const accountLocks = new Map<string, ReturnType<typeof Effect.unsafeMakeSemaphore>>()
-    const teamPrs = (input: { accountId: string; organization: string; teamSlug: string; queue: GitHubTeamQueue; refresh: boolean }) => {
-      const lock = accountLocks.get(input.accountId) ?? Effect.unsafeMakeSemaphore(1)
-      accountLocks.set(input.accountId, lock)
-      // Search quotas are shared across an account's queues; serialize their progress updates too.
-      return lock.withPermits(1)(withTeamAccount(input.accountId, (account) =>
-        teamQueuePrs(account, input.organization, input.teamSlug, input.queue, input.refresh, discoveryCache, queues, cooldowns)))
-    }
     return {
     teams: () => withTeamAccount(null, (account) => discoverTeams().pipe(Effect.map((teams) => {
-      pruneRemovedTeamProgress(account.id, teams, queues, discoveryCache)
+      const memberships = new Set(teams.map((team) => `orgs/${team.organization}/teams/${team.slug}/`.toLowerCase()))
+      for (const key of discoveryCache.keys()) {
+        const path = key.slice(key.indexOf("/") + 1).toLowerCase()
+        if (key.startsWith(`${account.id}/`) && path.includes("/teams/") && ![...memberships].some((prefix) => path.startsWith(prefix))) discoveryCache.delete(key)
+      }
       return { account, teams }
     }))),
-    teamPrs,
+    /** One 25-row cursor page; every filter is in the search, so later pages never hide matches. */
+    prSearch: (input: PrSearchInput) => {
+      if (input.team === null) {
+        return searchQuery(input.filters, null).pipe(Effect.flatMap((query) => searchPrs(query ?? "", input.after)))
+      }
+      const team = input.team
+      return withTeamAccount(team.accountId, (account) => Effect.gen(function* () {
+        const scope = yield* teamScope(account, team, input.after === null, input.refresh, discoveryCache)
+        const query = yield* searchQuery(input.filters, scope)
+        if (query === null) {
+          return emptyPage(team.queue === "repositories" ? "This team has no repositories of its own." : "This team has no members.")
+        }
+        return yield* searchPrs(query, input.after)
+      }))
+    },
+    /** Specific PRs by repository + number (the session's linked PRs), one aliased call. */
+    prsByKey: (keys: ReadonlyArray<{ readonly repository: string; readonly number: number }>) => Effect.gen(function* () {
+      if (keys.length === 0) return [] as ReadonlyArray<PullRequestListItem>
+      const variables: Record<string, unknown> = {}
+      const declarations: string[] = []
+      const fields: string[] = []
+      for (const [index, key] of keys.entries()) {
+        yield* Effect.try({ try: () => validateTeamPr(key.repository, key.number), catch: (error) => error as GitHubApiError })
+        const [owner, name] = slugParts(key.repository)
+        Object.assign(variables, { [`o${index}`]: owner, [`n${index}`]: name, [`k${index}`]: key.number })
+        declarations.push(`$o${index}:String!,$n${index}:String!,$k${index}:Int!`)
+        fields.push(`p${index}:repository(owner:$o${index},name:$n${index}){pullRequest(number:$k${index}){...L}}`)
+      }
+      // A deleted PR or lost repo access nulls its alias; keep the rest.
+      const data = yield* graphqlData(`${LIST_PR_FIELDS}\nquery(${declarations.join(",")}){viewer{login} rateLimit{remaining resetAt} ${fields.join(" ")}}`, variables, true)
+      const viewer = viewerOf(data)
+      return keys.flatMap((_, index) => mapListNode(jsonRecord(data[`p${index}`]).pullRequest, viewer))
+    }),
     teamPr: (input: { accountId: string; repository: string; number: number }) =>
       withTeamAccount(input.accountId, () => Effect.gen(function* () {
         validateTeamPr(input.repository, input.number)
@@ -1157,34 +1014,6 @@ export class GitHubCli extends Effect.Service<GitHubCli>()("@jingler/GitHubCli",
           picked: input.picked.map((_, index) => mapHomePullRequest(picked[index], directIds))
         } satisfies HomeGitHub
       }),
-    inbox: () =>
-      Effect.gen(function* () {
-        const raw = yield* json(null, [
-          "api", "graphql", "--paginate", "--slurp", "-f", `query=${INBOX_QUERY}`
-        ])
-        if (!Array.isArray(raw)) return []
-        const pages = raw.map(jsonRecord)
-        const viewerLogin = jsonRecord(jsonRecord(pages[0]?.data).viewer).login
-        return pages.flatMap((page) => {
-          const nodes = jsonRecord(jsonRecord(page.data).search).nodes
-          if (!Array.isArray(nodes)) return []
-          return nodes.flatMap((value): ReadonlyArray<PullRequestListItem> => {
-            const row = jsonRecord(value)
-            const repository = jsonRecord(row.repository).nameWithOwner
-            if (typeof repository !== "string") return []
-            const reviewRequests = jsonRecord(row.reviewRequests).nodes
-            return [mapPullRequestListItem({
-              ...row,
-              assignees: jsonRecord(row.assignees).nodes,
-              comments: jsonRecord(row.comments).totalCount,
-              labels: jsonRecord(row.labels).nodes,
-              reviewRequests: Array.isArray(reviewRequests)
-                ? reviewRequests.map((request) => jsonRecord(jsonRecord(request).requestedReviewer))
-                : []
-            }, repository, typeof viewerLogin === "string" ? viewerLogin : null)]
-          })
-        })
-      })
     }
   })
 }) {}

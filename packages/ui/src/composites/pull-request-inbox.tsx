@@ -1,8 +1,8 @@
-import { type ReactNode, useMemo, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { useMachine } from "@xstate/react"
 import { Select, SelectContent, SelectItem, SelectSearch, SelectTrigger } from "../components/beui/select.js"
 import { initialInboxFilters, pullRequestInboxFilterMachine, type PullRequestInboxFacets, type PullRequestInboxFilter } from "./pull-request-inbox-filter-machine.js"
-import type { GitHubTeam, GitHubTeamQueue, PrMergeMethod, PullRequest, PullRequestListItem, ReviewComment } from "@jingler/core"
+import type { GitHubTeam, GitHubTeamQueue, PrMergeMethod, PrSearchFilters, PullRequest, PullRequestListItem, ReviewComment } from "@jingler/core"
 import { ArrowLeft, GitPullRequest, MessageSquare } from "lucide-react"
 import { Avatar, githubAvatarUrl } from "../components/avatar.js"
 import { Badge } from "../components/badge.js"
@@ -10,6 +10,7 @@ import { DiffStat } from "../components/diff-stat.js"
 import { EmptyState, InlineError, ListSkeleton } from "../components/feedback.js"
 import { Button } from "../components/button.js"
 import { FilterChips } from "../components/filter-chips.js"
+import { Input } from "../components/input.js"
 import { ResizeHandle, useResizableWidth } from "../components/resizable.js"
 import { SearchField } from "../components/search-input.js"
 import { atLeast, useWidthTier, WidthTierProvider } from "../hooks/width-tier.js"
@@ -37,38 +38,31 @@ const filterOptionsFor = (sessionKeys?: ReadonlySet<string>) =>
 const keyOf = (pr: Pick<PullRequestListItem, "repository" | "number">) =>
   `${pr.repository}#${pr.number}`
 
-const matchesRelationship = (pr: PullRequestListItem, filter: PullRequestInboxFilter, viewerLogin: string, sessionKeys?: ReadonlySet<string>) => {
-  switch (filter) {
-    case "this-session": return sessionKeys?.has(keyOf(pr).toLowerCase()) ?? false
-    case "created": return pr.author.login.toLowerCase() === viewerLogin.toLowerCase()
-    case "assigned": return pr.assignedToViewer
-    case "review-requested": return pr.reviewRequestedFromViewer
-    default: return true
-  }
-}
 const hasActiveInboxFilters = (filters: typeof initialInboxFilters) => Boolean(
   filters.query || filters.filter !== "all" || filters.repository || filters.author || filters.label || filters.draft !== "all"
 )
-const matchesChoice = (actual: string, selected: string) => !selected || actual.toLowerCase() === selected.toLowerCase()
-const matchesFacets = (pr: PullRequestListItem, facets: PullRequestInboxFacets) =>
-  matchesChoice(pr.repository, facets.repository) && matchesChoice(pr.author.login, facets.author) &&
-  (!facets.label || pr.labels.some((label) => matchesChoice(label.name, facets.label))) &&
-  (facets.draft === "all" || pr.isDraft === (facets.draft === "draft"))
 
-export function filterPullRequests(
-  prs: ReadonlyArray<PullRequestListItem>,
-  filter: PullRequestInboxFilter,
-  query: string,
-  viewerLogin: string,
-  facets: PullRequestInboxFacets = initialInboxFilters,
-  sessionKeys?: ReadonlySet<string>
-): ReadonlyArray<PullRequestListItem> {
-  const search = query.trim().toLowerCase()
-  return prs.filter((pr) => {
-    if (!matchesRelationship(pr, filter, viewerLogin, sessionKeys) || !matchesFacets(pr, facets)) return false
-    return search.length === 0 || `${pr.title} ${pr.repository} ${pr.author.login} ${pr.number}`.toLowerCase().includes(search)
-  })
+/** What the host should load: a GitHub search, or the visible session's linked PRs by key. */
+export type PullRequestInboxQuery =
+  | { readonly kind: "search"; readonly filters: PrSearchFilters }
+  | { readonly kind: "session"; readonly keys: ReadonlyArray<{ readonly repository: string; readonly number: number }> }
+
+const sessionKeysOf = (keys: ReadonlySet<string>) => [...keys].flatMap((key) => {
+  const match = /^(.+)#(\d+)$/.exec(key)
+  return match ? [{ repository: match[1]!, number: Number(match[2]) }] : []
+})
+
+/** Every facet becomes part of the query; team mode ignores the personal relationship. */
+export const inboxQueryOf = (filters: typeof initialInboxFilters, team: boolean, sessionKeys?: ReadonlySet<string>): PullRequestInboxQuery => {
+  if (!team && filters.filter === "this-session") return { kind: "session", keys: sessionKeysOf(sessionKeys ?? new Set()) }
+  return { kind: "search", filters: {
+    relationship: team || filters.filter === "this-session" ? "all" : filters.filter,
+    repository: filters.repository.trim(), author: filters.author.trim(), label: filters.label.trim(),
+    draft: filters.draft, text: filters.query.trim(),
+  } }
 }
+
+const TYPING_DEBOUNCE_MS = 400
 
 export interface PullRequestInboxProps {
   prs: ReadonlyArray<PullRequestListItem>
@@ -115,6 +109,16 @@ export interface PullRequestInboxProps {
   error?: string | null
   /** Re-runs the failed list load; the error row only shows Retry when this is given. */
   onRetry?: () => void
+  /** Filters changed (typing debounced); the host loads matching PRs. */
+  onQueryChange?: (query: PullRequestInboxQuery) => void
+  /** GitHub's match count for the current query. */
+  total?: number
+  hasMore?: boolean
+  loadingMore?: boolean
+  /** Next page; called when the end of the list scrolls into view. */
+  onLoadMore?: () => void
+  /** Every repository the account can see, loaded in the background. */
+  repositoryOptions?: ReadonlyArray<string>
 }
 
 /** The list column: full width when compact, otherwise a drag-resizable, remembered width. */
@@ -159,7 +163,13 @@ export function PullRequestInbox({
   detailLoading = false,
   detailError = null,
   error = null,
-  onRetry
+  onRetry,
+  onQueryChange,
+  total,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  repositoryOptions = []
 }: PullRequestInboxProps) {
          function renderSelectedPullRequest() {
            return (<PullRequestView
@@ -247,18 +257,35 @@ export function PullRequestInbox({
   const { filter, query } = facets
   const setFilter = (next: PullRequestInboxFilter) => sendFilters({ type: "CHANGE", fields: { filter: next } })
   const setQuery = (next: string) => sendFilters({ type: "CHANGE", fields: { query: next } })
-  const options = useMemo(() => ({
-    repository: filterOptions(prs.map((pr) => pr.repository)),
-    author: filterOptions(prs.map((pr) => pr.author.login)),
-    label: filterOptions(prs.flatMap((pr) => pr.labels.map((label) => label.name))),
+  const repositories = useMemo(() => filterOptions([...repositoryOptions, ...prs.map((pr) => pr.repository)]), [repositoryOptions, prs])
+  const suggestions = useMemo(() => ({
+    author: [...new Set(prs.map((pr) => pr.author.login))].sort(),
+    label: [...new Set(prs.flatMap((pr) => pr.labels.map((label) => label.name)))].sort(),
   }), [prs])
   const [mobileDetail, setMobileDetail] = useState(false)
   const compact = !atLeast(useWidthTier(), "mid")
   const isTeam = Boolean(teamControls?.teamId)
-  const visible = useMemo(
-    () => filterPullRequests(prs, isTeam ? "all" : filter, query, viewerLogin, facets, sessionPrKeys),
-    [filter, prs, query, viewerLogin, isTeam, facets, sessionPrKeys]
-  )
+  // GitHub already applied every filter; rendering the rows as-is keeps paging honest.
+  const visible = prs
+  const nextQuery = JSON.stringify(inboxQueryOf(facets, isTeam, sessionPrKeys))
+  const sentQuery = useRef<string | null>(null)
+  useEffect(() => {
+    if (!onQueryChange || nextQuery === sentQuery.current) return
+    const send = () => { sentQuery.current = nextQuery; onQueryChange(JSON.parse(nextQuery) as PullRequestInboxQuery) }
+    // Only typed text waits; chips and selects apply at once.
+    const textOf = (raw: string | null) => raw === null ? null : (JSON.parse(raw) as { filters?: { text?: string } }).filters?.text ?? ""
+    if (sentQuery.current === null || textOf(sentQuery.current) === textOf(nextQuery)) return send()
+    const timer = setTimeout(send, TYPING_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [nextQuery, onQueryChange])
+  const sentinel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const node = sentinel.current
+    if (!node || !hasMore || !onLoadMore || typeof IntersectionObserver === "undefined") return
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMore() }, { rootMargin: "200px" })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasMore, onLoadMore, visible.length])
   useActivateOnFocus(onActivate)
   const selectedKey = selected ? `${selected.repository}#${selected.number}` : null
   const showList = !(compact && mobileDetail && selected !== null)
@@ -277,9 +304,10 @@ export function PullRequestInbox({
             {teamControls ? <InboxTeamControls controls={teamControls} filter={filter} onFilter={setFilter} sessionPrKeys={sessionPrKeys} />
               : <FilterChips options={filterOptionsFor(sessionPrKeys)} value={filter} onChange={setFilter} ariaLabel="Pull request filter" />}
             <div className="grid min-w-0 grid-cols-2 gap-2">
-              {(["repository", "author", "label"] as const).map((kind) => <InboxFilterSelect
-                key={kind} label={kind === "repository" ? "Repository" : kind === "author" ? "Author" : "Label"}
-                value={facets[kind]} options={[{ value: "", label: "All" }, ...options[kind]]}
+              <InboxFilterSelect label="Repository" value={facets.repository} options={[{ value: "", label: "All" }, ...repositories]}
+                onChange={(value) => sendFilters({ type: "CHANGE", fields: { repository: value } })} />
+              {(["author", "label"] as const).map((kind) => <InboxTypeahead
+                key={kind} label={kind === "author" ? "Author" : "Label"} value={facets[kind]} suggestions={suggestions[kind]}
                 onChange={(value) => sendFilters({ type: "CHANGE", fields: { [kind]: value } })}
               />)}
               <InboxFilterSelect label="Draft status" value={facets.draft} searchable={false}
@@ -288,7 +316,7 @@ export function PullRequestInbox({
               />
             </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>{visible.length} of {prs.length} loaded PRs</span>
+              <span>{total !== undefined && total > visible.length ? `Showing ${visible.length} of ${total}` : `${visible.length} PR${visible.length === 1 ? "" : "s"}`}</span>
               {hasActiveInboxFilters(facets) &&
                 <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2" onClick={() => sendFilters({ type: "CLEAR" })}>Clear filters</Button>}
             </div>
@@ -301,6 +329,9 @@ export function PullRequestInbox({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {getLoading()}
+            {hasMore && !loading && !error && <div ref={sentinel} className="flex justify-center p-3">
+              <Button variant="ghost" size="sm" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>
+            </div>}
           </div>
         </InboxListColumn>
       )}
@@ -384,6 +415,21 @@ export function InboxFilterSelect({ label, value, options, onChange, searchable 
       {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
     </SelectContent>
   </Select>
+}
+
+/** Free-text filter with suggestions from loaded rows; any typed value is searched as-is. */
+function InboxTypeahead({ label, value, suggestions, onChange }: {
+  label: string
+  value: string
+  suggestions: ReadonlyArray<string>
+  onChange: (value: string) => void
+}) {
+  const listId = `pr-inbox-${label.toLowerCase()}-suggestions`
+  return <>
+    <Input aria-label={`Filter by ${label.toLowerCase()}`} placeholder={`${label}: All`} value={value} list={listId}
+      onChange={(event) => onChange(event.target.value)} className="h-8 min-w-0 text-xs" />
+    <datalist id={listId}>{suggestions.map((option) => <option key={option} value={option} />)}</datalist>
+  </>
 }
 
 export function InboxMessage({ children }: { children: ReactNode }) {
