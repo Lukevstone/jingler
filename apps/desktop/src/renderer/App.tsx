@@ -187,6 +187,7 @@ import { ObsidianSaveToast, useObsidianVaultConfigured } from "./obsidian-save-t
 import { useDebugSessions } from "./debug-session.js";
 import { repositoryAccess } from "./github-connection-machine.js";
 import { useGitHubConnection } from "./use-github-connection.js";
+import { HomeTodayPanel } from "./home-today-panel.js";
 import { GitHubFeedbackRouter } from "./github-feedback.js";
 import { applyRelayHealthUpdate } from "./github-relay-health.js";
 
@@ -1763,6 +1764,7 @@ function AuthedApp({
         liveActivity={liveActivity}
         allowFor={decideGateAllowFor}
         importCard={homeImportCard}
+        renderHomeToday={() => <HomeTodayPanel />}
         interruptedSessions={interruptedSessions}
         chatActivities={chatActivities}
         prStates={prStates}
@@ -2454,7 +2456,14 @@ function renderPullRequestInbox(
     detailLoading={pullRequestInbox.detailLoading}
     detailError={pullRequestInbox.detailError}
     error={pullRequestInbox.error}
-    onRetry={pullRequestInbox.refreshInbox} />;
+    onRetry={pullRequestInbox.refreshInbox}
+    onQueryChange={pullRequestInbox.setQuery}
+    total={pullRequestInbox.total}
+    hasMore={pullRequestInbox.hasMore}
+    loadingMore={pullRequestInbox.loadingMore}
+    onLoadMore={pullRequestInbox.loadMore}
+    loadMoreError={pullRequestInbox.loadMoreError}
+    repositoryOptions={pullRequestInbox.repositoryOptions} />;
 }
 
 /** Map the auth machine's signed-out substate to the LoginScreen's visual state. */

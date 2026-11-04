@@ -409,6 +409,8 @@
       "packages/ui/src/composites/session-",
       "packages/ui/src/composites/archived-banner.tsx",
       "packages/ui/src/composites/home-cards",
+      "packages/ui/src/composites/home-today",
+      "apps/desktop/src/renderer/home-today-panel.tsx",
       "packages/ui/src/composites/import-",
       "packages/ui/src/composites/new-workspace-",
       "packages/ui/src/composites/start-from-list.tsx",

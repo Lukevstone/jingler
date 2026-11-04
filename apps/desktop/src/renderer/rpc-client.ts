@@ -76,7 +76,9 @@ import type {
   IssueInboxResult,
   GitHubTeamDiscovery,
   GitHubTeamQueue,
-  GitHubTeamPrResult,
+  PrSearchFilters,
+  PrSearchPage,
+  HomeGitHub,
   QuestionAnswer,
   ReasoningSetting,
   Repo,
@@ -997,8 +999,6 @@ export const rpc = {
   githubPrState: (sessionId: string, number?: number, checkoutId?: string): Promise<SessionPrStatus | null> =>
     run((c) => c.Github.prState({ sessionId, ...(number === undefined ? {} : { number }), ...(checkoutId === undefined ? {} : { checkoutId }) })),
   githubTeams: (): Promise<GitHubTeamDiscovery> => run((c) => c.Github.teams()),
-  githubTeamPrs: (input: { accountId: string; organization: string; teamSlug: string; queue: GitHubTeamQueue; refresh: boolean }): Promise<GitHubTeamPrResult> =>
-    run((c) => c.Github.teamPrs(input)),
   githubTeamPr: (input: { accountId: string; repository: string; number: number }): Promise<PullRequest> =>
     run((c) => c.Github.teamPr(input)),
   githubTeamComment: (input: { accountId: string; repository: string; number: number; body: string }): Promise<void> =>
@@ -1007,8 +1007,12 @@ export const rpc = {
     run((c) => c.Github.teamClose(input)),
   githubTeamMerge: (input: { accountId: string; repository: string; number: number; method: PrMergeMethod }): Promise<void> =>
     run((c) => c.Github.teamMerge(input)),
-  githubPrInbox: (): Promise<ReadonlyArray<PullRequestListItem>> =>
-    run((c) => c.Github.inbox()),
+  githubPrSearch: (input: { filters: PrSearchFilters; team: { accountId: string; organization: string; teamSlug: string; queue: GitHubTeamQueue } | null; after: string | null; refresh: boolean }): Promise<PrSearchPage> =>
+    run((c) => c.Github.prSearch(input)),
+  githubPrsByKey: (keys: ReadonlyArray<{ repository: string; number: number }>): Promise<ReadonlyArray<PullRequestListItem>> =>
+    run((c) => c.Github.prsByKey({ keys })),
+  githubHome: (input: { picked: ReadonlyArray<string>; closedSince: string }): Promise<HomeGitHub> =>
+    run((c) => c.Github.home(input)),
   githubPrBySlug: (repository: string, number: number): Promise<PullRequest | null> =>
     run((c) => c.Github.prBySlug({ repository, number })),
   githubIssueInbox: (): Promise<IssueInboxResult> =>

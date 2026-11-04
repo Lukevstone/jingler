@@ -1,5 +1,6 @@
 import type {
   GitHubRateLimit,
+  HomePullRequest,
   Issue,
   IssueLinkedPr,
   IssueListItem,
@@ -420,6 +421,50 @@ export const mapPrSummary = (raw: unknown): PrSummary => {
     additions: integer(pr.additions) ?? 0,
     deletions: integer(pr.deletions) ?? 0,
     updatedAt: text(field(pr, "updatedAt", "updated_at")) ?? ""
+  }
+}
+
+const HOME_REVIEW_DECISIONS = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes-requested",
+  REVIEW_REQUIRED: "review-required"
+} as const
+
+const homeState = (pr: Json): HomePullRequest["state"] => {
+  const rawState = text(pr.state)?.toUpperCase()
+  if (rawState === "MERGED") return "merged"
+  if (rawState === "CLOSED") return "closed"
+  return pr.isDraft === true ? "draft" : "open"
+}
+
+const homeReviewDecision = (value: unknown): HomePullRequest["reviewDecision"] => {
+  const decision = text(value)
+  return decision !== null && decision in HOME_REVIEW_DECISIONS
+    ? HOME_REVIEW_DECISIONS[decision as keyof typeof HOME_REVIEW_DECISIONS]
+    : null
+}
+
+/** A Home GraphQL PR node; null when the node is missing or not a pull request. */
+export const mapHomePullRequest = (raw: unknown, directIds: ReadonlySet<string>): HomePullRequest | null => {
+  const pr = jsonRecord(raw)
+  const id = text(pr.id)
+  const repository = text(jsonRecord(pr.repository).nameWithOwner)
+  if (id === null || repository === null) return null
+  const rollup = jsonRecord(jsonRecord(rows(jsonRecord(pr.commits).nodes)[0]?.commit).statusCheckRollup)
+  return {
+    id,
+    number: integer(pr.number) ?? 0,
+    title: text(pr.title) ?? "",
+    url: text(pr.url) ?? "",
+    repository,
+    author: nestedLogin(pr.author) ?? "unknown",
+    state: homeState(pr),
+    checks: text(rollup.state) === null ? null : checkStatusOf(rollup),
+    reviewDecision: homeReviewDecision(pr.reviewDecision),
+    createdAt: text(pr.createdAt) ?? "",
+    updatedAt: text(pr.updatedAt) ?? "",
+    viewerReviewedAt: text(jsonRecord(pr.viewerLatestReview).submittedAt),
+    directRequest: directIds.has(id)
   }
 }
 

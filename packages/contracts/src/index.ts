@@ -86,7 +86,10 @@ import {
   PullRequestListItem,
   GitHubTeamDiscovery,
   GitHubTeamQueue,
-  GitHubTeamPrResult,
+  PrSearchFilters,
+  PrSearchPage,
+  HomeGitHub,
+  HomePrNodeId,
   QuestionAnswer,
   ReasoningSetting,
   Repo,
@@ -1951,27 +1954,41 @@ export class JinglerReviewRpcs extends RpcGroup.make(
     payload: { sessionId: Schema.String, number: Schema.optional(Schema.Number), checkoutId: Schema.optional(Schema.String) }
   }),
 
-  /** Open PRs across every repository granted to the GitHub App. */
-  Rpc.make("Github.inbox", {
+  /** One 25-row page of the PR inbox; every filter is a search qualifier. `team` = CLI only, no App fallback. */
+  Rpc.make("Github.prSearch", {
+    success: PrSearchPage,
+    error: GitHubApiError,
+    payload: {
+      filters: PrSearchFilters,
+      team: Schema.NullOr(Schema.Struct({
+        accountId: Schema.String,
+        organization: Schema.String,
+        teamSlug: Schema.String,
+        queue: GitHubTeamQueue,
+      })),
+      after: Schema.NullOr(Schema.String.pipe(Schema.maxLength(200))),
+      refresh: Schema.Boolean,
+    },
+  }),
+
+  /** Specific PRs by repository + number (a session's linked PRs) in one call. */
+  Rpc.make("Github.prsByKey", {
     success: Schema.Array(PullRequestListItem),
-    error: GitHubApiError
+    error: GitHubApiError,
+    payload: { keys: Schema.Array(Schema.Struct({ repository: Schema.String, number: Schema.Number })).pipe(Schema.maxItems(20)) },
+  }),
+
+  /** Home: authored PRs, the review pool and the picked review PRs, via the gh CLI only. */
+  Rpc.make("Github.home", {
+    success: HomeGitHub,
+    error: GitHubApiError,
+    payload: { picked: Schema.Array(HomePrNodeId).pipe(Schema.maxItems(3)), closedSince: Schema.String.pipe(Schema.pattern(/^\d{4}-\d{2}-\d{2}$/)) },
   }),
 
   /** Organization teams for the current github.com CLI account; no App fallback. */
   Rpc.make("Github.teams", {
     success: GitHubTeamDiscovery,
     error: GitHubApiError,
-  }),
-  Rpc.make("Github.teamPrs", {
-    success: GitHubTeamPrResult,
-    error: GitHubApiError,
-    payload: {
-      accountId: Schema.String,
-      organization: Schema.String,
-      teamSlug: Schema.String,
-      queue: GitHubTeamQueue,
-      refresh: Schema.Boolean,
-    },
   }),
   Rpc.make("Github.teamPr", {
     success: PullRequest,

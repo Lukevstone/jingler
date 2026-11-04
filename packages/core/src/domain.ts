@@ -2003,12 +2003,64 @@ export const GitHubTeamDiscovery = Schema.Struct({
 });
 export type GitHubTeamDiscovery = Schema.Schema.Type<typeof GitHubTeamDiscovery>;
 
-export const GitHubTeamPrResult = Schema.Struct({
+
+/** Inbox filters; every field becomes a GitHub search qualifier so paging never hides matches. */
+export const PrSearchFilters = Schema.Struct({
+  relationship: Schema.Literal("all", "created", "assigned", "review-requested"),
+  repository: Schema.String.pipe(Schema.maxLength(201)),
+  author: Schema.String.pipe(Schema.maxLength(100)),
+  label: Schema.String.pipe(Schema.maxLength(100)),
+  draft: Schema.Literal("all", "draft", "ready"),
+  text: Schema.String.pipe(Schema.maxLength(200)),
+});
+export type PrSearchFilters = Schema.Schema.Type<typeof PrSearchFilters>;
+
+/** One cursor page of inbox results. */
+export const PrSearchPage = Schema.Struct({
   prs: Schema.Array(PullRequestListItem),
-  /** Nonempty when any discovery/search portion was incomplete. */
+  /** GitHub's match count; search only serves the first 1,000. */
+  total: Schema.Number,
+  endCursor: Schema.NullOr(Schema.String),
+  hasNextPage: Schema.Boolean,
+  viewerLogin: Schema.NullOr(Schema.String),
   warnings: Schema.Array(Schema.String),
 });
-export type GitHubTeamPrResult = Schema.Schema.Type<typeof GitHubTeamPrResult>;
+export type PrSearchPage = Schema.Schema.Type<typeof PrSearchPage>;
+
+/** GraphQL node id of a pull request (the daily review pick stores these): `PR_…` or legacy base64 `MDEx…`. */
+export const HomePrNodeId = Schema.String.pipe(Schema.pattern(/^[A-Za-z0-9_=+/-]{1,200}$/));
+
+/** One PR row on Home: My PRs, the review pool, or a picked review. */
+export const HomePullRequest = Schema.Struct({
+  id: Schema.String,
+  number: Schema.Number,
+  title: Schema.String,
+  url: Schema.String,
+  repository: Schema.String,
+  author: Schema.String,
+  state: Schema.Literal("open", "draft", "merged", "closed"),
+  checks: Schema.NullOr(PrCheckStatus),
+  reviewDecision: Schema.NullOr(Schema.Literal("approved", "changes-requested", "review-required")),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  /** When the viewer last submitted a review; null when they never have. */
+  viewerReviewedAt: Schema.NullOr(Schema.String),
+  /** Review requested of the viewer directly, not only through a team. */
+  directRequest: Schema.Boolean,
+});
+export type HomePullRequest = Schema.Schema.Type<typeof HomePullRequest>;
+
+export const HomeGitHub = Schema.Struct({
+  viewerLogin: Schema.String,
+  /** Authored PRs: open, plus merged/closed in the last 7 days; newest update first. */
+  mine: Schema.Array(HomePullRequest),
+  mineTotal: Schema.Number,
+  /** Open, non-draft PRs requesting the viewer or their teams; oldest first. */
+  reviewPool: Schema.Array(HomePullRequest),
+  /** The requested pick ids in order; null where a PR no longer resolves. */
+  picked: Schema.Array(Schema.NullOr(HomePullRequest)),
+});
+export type HomeGitHub = Schema.Schema.Type<typeof HomeGitHub>;
 
 /** A provider-neutral person reference used by issue metadata. */
 export const IssueActor = Schema.Struct({

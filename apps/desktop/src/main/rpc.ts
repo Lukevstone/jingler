@@ -1726,7 +1726,9 @@ export const workspaceRevertFile = (input: {
  * `Github.pr` handler. Returns the linked PR via GitHub APIs or null when the
  * session has no worktree or no linked PR. Exported for tests.
  */
-export const githubPrInbox = () => GitHubApi.inbox();
+
+export const githubHome = (input: { readonly picked: ReadonlyArray<string>; readonly closedSince: string }) =>
+  GitHubApi.home(input);
 
 export const githubPrBySlug = (repository: string, number: number) =>
   GitHubApi.prViewBySlug(repository, number);
@@ -6213,9 +6215,10 @@ const ReviewHandlersLayer = JinglerReviewRpcs.toLayer({
       ),
     ),
   "Github.recordPrEvent": ({ sessionId, kind, number }) => recordPrEvent(sessionId, kind, number),
-  "Github.inbox": () => githubPrInbox(),
+  "Github.prSearch": (input) => GitHubApi.prSearch(input),
+  "Github.prsByKey": (input) => GitHubApi.prsByKey(input.keys),
+  "Github.home": (input) => githubHome(input),
   "Github.teams": () => GitHubApi.teams(),
-  "Github.teamPrs": (input) => GitHubApi.teamPrs(input),
   "Github.teamPr": (input) => GitHubApi.teamPr(input),
   "Github.teamComment": (input) => GitHubApi.teamComment(input),
   "Github.teamClose": (input) => GitHubApi.teamClose(input),

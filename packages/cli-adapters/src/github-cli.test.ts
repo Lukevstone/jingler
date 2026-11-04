@@ -47,32 +47,46 @@ describe("GitHubCli", () => {
     )).resolves.toBe(false)
   })
 
-  it("paginates the inbox and preserves viewer relationships", async () => {
-    const result = await run(GitHubCli.inbox(), (command, args) => {
-      if (command !== "gh" || args[0] !== "api") return
-      expect(args).toEqual(expect.arrayContaining(["--paginate", "--slurp"]))
-      expect(args.join(" ")).toEqual(expect.stringContaining("viewer{login}"))
-      expect(args.join(" ")).toEqual(expect.stringContaining("after:$endCursor"))
-      expect(args.join(" ")).toEqual(expect.stringContaining("pageInfo{hasNextPage endCursor}"))
-      expect(args.join(" ")).toEqual(expect.stringContaining("requestedReviewer{... on User{login}}"))
-      const pull = (number: number) => ({
-        number,
-        repository: { nameWithOwner: "acme/widget" },
-        title: `PR ${number}`,
-        url: `https://github.com/acme/widget/pull/${number}`,
-        assignees: { nodes: number === 101 ? [{ login: "OCTOCAT" }] : [] },
-        reviewRequests: { nodes: number === 101
-          ? [{ requestedReviewer: { login: "octocat" } }]
-          : [] }
-      })
-      return { stdout: JSON.stringify([
-        { data: { viewer: { login: "octocat" }, search: { nodes: Array.from({ length: 100 }, (_, index) => pull(index + 1)) } } },
-        { data: { viewer: { login: "octocat" }, search: { nodes: [pull(101)] } } }
-      ]) }
+  it("personal search maps relationships and facets into one GraphQL page", async () => {
+    let body: { variables: { q: string } } | null = null
+    const result = await run(GitHubCli.prSearch({
+      filters: { relationship: "review-requested", repository: "acme/widget", author: "", label: "", draft: "ready", text: "" },
+      team: null, after: null, refresh: false
+    }), (command, args, stdin) => {
+      if (command !== "gh" || args[1] !== "graphql") return
+      body = JSON.parse(stdin)
+      return { stdout: JSON.stringify({ data: { viewer: { login: "octocat" }, rateLimit: { remaining: 4000, resetAt: "2026-11-04T11:00:00Z" },
+        search: { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{
+          number: 101, repository: { nameWithOwner: "acme/widget" }, title: "PR", url: "https://github.com/acme/widget/pull/101",
+          assignees: { nodes: [{ login: "OCTOCAT" }] }, reviewRequests: { nodes: [{ requestedReviewer: { login: "octocat" } }] }
+        }] } } }) }
     })
+    expect(body!.variables.q).toBe("is:pr is:open review-requested:@me repo:acme/widget draft:false sort:updated-desc")
+    expect(result.prs[0]).toMatchObject({ assignedToViewer: true, reviewRequestedFromViewer: true })
+  })
 
-    expect(result).toHaveLength(101)
-    expect(result[100]).toMatchObject({ assignedToViewer: true, reviewRequestedFromViewer: true })
+  it("prsByKey fetches linked PRs by alias and drops ones that no longer resolve", async () => {
+    const result = await run(GitHubCli.prsByKey([{ repository: "acme/widget", number: 1 }, { repository: "acme/gone", number: 2 }]), (command, args) => {
+      if (command !== "gh" || args[1] !== "graphql") return
+      return { exitCode: 1, stderr: "Could not resolve", stdout: JSON.stringify({ data: { viewer: { login: "octocat" },
+        p0: { pullRequest: { number: 1, repository: { nameWithOwner: "acme/widget" }, title: "Linked" } }, p1: null } }) }
+    })
+    expect(result.map((pr) => pr.number)).toEqual([1])
+  })
+
+  it("home merges direct requests into the pool and treats only a missing picked node as an answer", async () => {
+    const node = (id: string, createdAt: string) => ({ id, number: 1, title: id, url: "u", repository: { nameWithOwner: "acme/widget" }, state: "OPEN", createdAt })
+    const reply = (errors: unknown[]) => ({ exitCode: errors.length ? 1 : 0, stdout: JSON.stringify({ data: {
+      viewer: { login: "me" }, open: { issueCount: 0, nodes: [] }, closed: { issueCount: 0, nodes: [] },
+      pool: { nodes: [node("PR_team", "2026-01-01T00:00:00Z")] }, direct: { nodes: [node("PR_direct", "2026-11-01T00:00:00Z")] },
+      picked: [null]
+    }, errors }) })
+    const ok = await run(GitHubCli.home({ picked: ["MDExOlB1bGxSZXF1ZXN0MQ=="], closedSince: "2026-10-28" }), (command) =>
+      command === "gh" ? reply([{ type: "NOT_FOUND", path: ["picked", 0] }]) : undefined)
+    expect(ok.reviewPool.map((pr) => [pr.id, pr.directRequest])).toEqual([["PR_direct", true], ["PR_team", false]])
+    expect(ok.picked).toEqual([null])
+    await expect(run(GitHubCli.home({ picked: [], closedSince: "2026-10-28" }), (command) =>
+      command === "gh" ? reply([{ type: "SERVICE_UNAVAILABLE", path: ["pool"] }]) : undefined)).rejects.toThrow("partial result")
   })
 
   it("paginates the issue inbox and tags rows with repository and comment count", async () => {

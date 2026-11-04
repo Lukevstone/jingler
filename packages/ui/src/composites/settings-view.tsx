@@ -93,6 +93,7 @@ import {
   type WebSearchSettingsProps
 } from "./web-search-settings.js"
 import { ProviderModelBrowser } from "./provider-model-browser.js"
+import { MorphPopover, MorphPopoverContent, MorphPopoverTrigger } from "../components/beui/popover-morph.js"
 import { ProjectWorkflowSettings, type ProjectWorkflowSettingsProps } from "./project-workflow-settings.js"
 
 // ── Section registry ─────────────────────────────────────────────────────────
@@ -1540,6 +1541,44 @@ function NotificationsSection({
   )
 }
 
+type ReviewModel = NonNullable<GithubConfig["adversarialReviewModel"]>
+
+/** Same as the composer: the model list lives in a portalled popover, so the settings card can't clip it. */
+function ReviewModelPicker({ catalog, value, onChange }: {
+  catalog: AgentEndpointCatalog
+  value: GithubConfig["adversarialReviewModel"]
+  onChange: (model: ReviewModel) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const desktop = { ...catalog, endpoints: catalog.endpoints.filter(({ endpoint }) => endpoint.targetId === "desktop") }
+  const label = desktop.endpoints.find(({ endpoint }) => endpoint.id === value?.endpointId)?.models
+    .find((model) => model.id === value?.modelId)?.label ?? value?.modelId ?? "Choose model"
+  return (
+    <MorphPopover open={open} onOpenChange={setOpen}>
+      <MorphPopoverTrigger>
+        <Button type="button" variant="ghost" size="sm" aria-label="Review model" className="min-w-0 max-w-[220px] gap-1.5 px-2 text-muted-foreground">
+          <span className="truncate">{label}</span>
+        </Button>
+      </MorphPopoverTrigger>
+      <MorphPopoverContent side="bottom" align="end" sideOffset={8} radius={12} className="w-80 max-w-[calc(100vw-24px)] p-2">
+        <ProviderModelBrowser
+          catalog={desktop}
+          endpointId={value?.endpointId}
+          connectionId={null}
+          providerId={value?.providerId}
+          modelId={value?.modelId ?? null}
+          onSelect={({ runtimeId, endpointId, providerId, modelId }) => {
+            onChange({ runtimeId, endpointId, providerId, modelId })
+            setOpen(false)
+          }}
+          inlineContent
+          className="w-full"
+        />
+      </MorphPopoverContent>
+    </MorphPopover>
+  )
+}
+
 function GithubSection({
   connection,
   busy,
@@ -1738,27 +1777,11 @@ return ("bg-line-strong")
             <SettingsRow
               label="Review model"
               help="Desktop harness and model used for read-only adversarial reviews."
-              control={
-                <ProviderModelBrowser
-                  catalog={{
-                    ...agentEndpointCatalog,
-                    endpoints: agentEndpointCatalog.endpoints.filter(
-                      ({ endpoint }) => endpoint.targetId === "desktop"
-                    )
-                  }}
-                  endpointId={draft.adversarialReviewModel?.endpointId}
-                  connectionId={null}
-                  providerId={draft.adversarialReviewModel?.providerId}
-                  modelId={draft.adversarialReviewModel?.modelId ?? null}
-                  onSelect={({ runtimeId, endpointId, providerId, modelId }) =>
-                    setGithub({
-                      ...draft,
-                      adversarialReviewModel: { runtimeId, endpointId, providerId, modelId }
-                    })
-                  }
-                  className="max-w-[220px]"
-                />
-              }
+              control={<ReviewModelPicker
+                catalog={agentEndpointCatalog}
+                value={draft.adversarialReviewModel}
+                onChange={(adversarialReviewModel) => setGithub({ ...draft, adversarialReviewModel })}
+              />}
             />
           )}
           <GeneralToggleRow

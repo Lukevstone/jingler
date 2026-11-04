@@ -119,6 +119,7 @@ const installGh = () => {
     "if (args[0] === 'repo' && args[1] === 'view') { console.log('acme/widget'); process.exit(0) }",
     "if (args[0] === 'api' && args[1] === 'repos/acme/widget') { console.log(JSON.stringify({ id: 7, node_id: 'R_7' })); process.exit(0) }",
     "if (args[0] === 'api' && args[1] === 'repos/acme/widget/pulls/42/files') { console.log('[[]]'); process.exit(0) }",
+    "if (args[0] === 'api' && args[1] === 'graphql' && args.includes('--input')) { const body = JSON.parse(require('node:fs').readFileSync(0, 'utf8')); if (body.query.includes('search(query:$q')) { const nodes = inbox[0].data.search.nodes; console.log(JSON.stringify({ data: { viewer: { login: 'octocat' }, rateLimit: { remaining: 4000, resetAt: '2099-01-01T00:00:00Z' }, search: { issueCount: nodes.length, nodes, pageInfo: { hasNextPage: false, endCursor: null } } } })); process.exit(0) } }",
     "if (args[0] === 'api' && args[1] === 'graphql') {",
     "  if (joined.includes('search(query:')) console.log(JSON.stringify(inbox))",
     `  else if (joined.includes('commits(first:100')) console.log(${JSON.stringify(empty("commits"))})`,

@@ -24,7 +24,9 @@ const args = process.argv.slice(2)
 const joined = args.join(' ')
 const control = JSON.parse(fs.readFileSync(${JSON.stringify(controlPath)}, 'utf8'))
 const pinned = process.env.GH_TOKEN === 'fixture-private-' + control.accountId
-fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({args, pinned}) + '\\n')
+const body = args.includes('--input') ? JSON.parse(fs.readFileSync(0, 'utf8')) : null
+const q = (body && body.variables && body.variables.q) || ''
+fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({args, pinned, q}) + '\\n')
 const output = (value) => { console.log(JSON.stringify(value)); process.exit(0) }
 const item = (number, repository = 'acme/widget') => ({
   number, title: 'Team PR ' + number, state: 'open', draft: number === 42,
@@ -62,28 +64,35 @@ if (args[0] === 'api') {
   if (endpoint.includes('/memberships/')) output({state:'active'})
   if (endpoint.endsWith('/members')) output([[{login:'parent'}],[{login:'child',inherited:true}]])
   if (endpoint.endsWith('/repos')) output([[{full_name:'acme/widget'}],[{full_name:'acme/unregistered'}]])
-  if (endpoint === 'search/issues') {
-    if (control.fail) { console.error('HTTP 403 SAML SSO required; private stderr'); process.exit(1) }
-    const q = args.find(a => a.startsWith('q=')) || ''
-    let items = q.includes('team-review-requested:') ? [item(42)]
-      : q.includes('author:parent') ? [item(43)]
-      : q.includes('author:child') ? [item(44)]
-      : q.includes('repo:acme/unregistered') ? [item(46,'acme/unregistered')]
-      : [item(45)]
-    if (control.filterRows) items = filterItems()
-    const page = Number((args.find(a => a.startsWith('page=')) || 'page=1').slice(5))
-    output({total_count:items.length,incomplete_results:control.partial,items:items.slice((page-1)*100,page*100)})
-  }
+  if (endpoint === 'user/repos') output([[{id:1,full_name:'acme/widget'},{id:2,full_name:'acme/unregistered'},{id:3,full_name:'acme/remote-only'},...Array.from({length:control.extraFilterRows},(_,i) => ({id:100+i,full_name:'acme/filter'+i}))]])
   if (endpoint === 'repos/acme/widget') output({id:7,node_id:'R_7',clone_url:control.repoPath,ssh_url:null})
   if (endpoint.endsWith('/files')) output([[{filename:'src/only-in-pr.ts',additions:1,deletions:0,status:'added',patch:'@@ -0,0 +1 @@\\n+pr'}]])
-  if (endpoint === 'graphql') {
-    if (joined.includes('search(query:')) {
-      const rows = control.filterRows ? filterItems() : [item(42)]
-      const nodes = rows.map(pr => ({number:pr.number,title:pr.title,state:'OPEN',isDraft:pr.draft,author:pr.user,repository:{nameWithOwner:pr.html_url.split('/').slice(3,5).join('/')},updatedAt:pr.updated_at,comments:{totalCount:pr.comments},labels:{nodes:pr.labels},assignees:{nodes:[]},reviewRequests:{nodes:[]}}))
-      const visible = control.personal ? nodes : []
-      const pages = Array.from({length:Math.max(1,Math.ceil(visible.length/100))},(_,i) => ({data:{viewer:{login:'octocat'},search:{nodes:visible.slice(i*100,(i+1)*100),pageInfo:{hasNextPage:(i+1)*100<visible.length,endCursor:(i+1)*100<visible.length ? 'fixture-'+i : null}}}}))
-      output(pages)
+  if (endpoint === 'graphql' && body && body.query.includes('search(query:$q')) {
+    if (control.fail && !q.includes('@me')) { console.error('HTTP 403 SAML SSO required; private stderr'); process.exit(1) }
+    // Scope like GitHub would: the OR group picks the queue, then every facet narrows it.
+    let rows = q.includes('team-review-requested:') ? [item(42)]
+      : q.includes('author:parent') ? [item(43),item(44)]
+      : q.includes('repo:acme/unregistered OR') || q.includes('OR repo:acme/unregistered') ? [item(45),item(46,'acme/unregistered')]
+      : control.personal ? [item(42)] : []
+    if (control.filterRows) rows = filterItems()
+    let depth = 0
+    for (const t of q.split(' ')) {
+      if (t.startsWith('(')) depth++
+      const inGroup = depth > 0
+      if (t.endsWith(')')) depth--
+      if (inGroup) continue
+      if (t.startsWith('repo:')) rows = rows.filter(r => r.html_url.includes('/' + t.slice(5) + '/pull/'))
+      if (t.startsWith('author:') && t !== 'author:@me') rows = rows.filter(r => r.user.login === t.slice(7))
+      if (t.startsWith('label:')) { const l = t.slice(6).split('"').join(''); rows = rows.filter(r => r.labels.some(x => x.name === l)) }
+      if (t === 'draft:false') rows = rows.filter(r => !r.draft)
+      if (t === 'draft:true') rows = rows.filter(r => r.draft)
     }
+    const offset = body.variables.after ? Number(body.variables.after) : 0
+    const next = offset + 25 < rows.length
+    const nodes = rows.slice(offset, offset + 25).map(pr => ({number:pr.number,title:pr.title,state:'OPEN',isDraft:pr.draft,author:pr.user,repository:{nameWithOwner:pr.html_url.split('/').slice(3,5).join('/')},updatedAt:pr.updated_at,comments:{totalCount:pr.comments},labels:{nodes:pr.labels},assignees:{nodes:[]},reviewRequests:{nodes:[]}}))
+    output({data:{viewer:{login:'octocat'},rateLimit:{remaining:4000,resetAt:'2099-01-01T00:00:00Z'},search:{issueCount:rows.length,nodes,pageInfo:{hasNextPage:next,endCursor:next ? String(offset + 25) : null}}}})
+  }
+  if (endpoint === 'graphql') {
     const field = joined.includes('commits(first:100') ? 'commits' : 'reviewThreads'
     output([{data:{repository:{pullRequest:{[field]:{nodes:[],pageInfo:{hasNextPage:false,endCursor:null}}}}}}])
   }
@@ -123,7 +132,7 @@ process.exit(child.status || 0)
       chmodSync(join(bin, "git"), 0o755)
     },
     env: { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`, GH_HOST: "hostile.example", GH_DEBUG: "api" },
-    requests: () => readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { args: string[]; pinned: boolean }),
+    requests: () => readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { args: string[]; pinned: boolean; q?: string }),
   }
 }
 
@@ -184,11 +193,7 @@ test("team queues use CLI only, refresh partial/access failures, and reuse local
     await expect.poll(() => cli.requests().some((request) => request.args[0] === "pr" && request.args[1] === "comment" && request.pinned)).toBe(true)
     expect(githubServer.operations).toHaveLength(appWrites)
 
-    cli.update({ partial: true })
-    await inbox.getByRole("button", { name: "Refresh", exact: true }).click()
-    await expect(inbox.getByText("Partial results", { exact: true })).toBeVisible()
-    await expect(inbox.getByRole("button", { name: /Team PR 45/ })).toBeVisible()
-    cli.update({ partial: false, fail: true })
+    cli.update({ fail: true })
     await inbox.getByRole("button", { name: "Refresh", exact: true }).click()
     await expect(inbox.getByRole("button", { name: /Team PR 45/ })).toBeVisible()
     await expect(inbox.getByText("Partial results", { exact: true })).toBeVisible()
@@ -198,7 +203,7 @@ test("team queues use CLI only, refresh partial/access failures, and reuse local
     cli.update({ fail: false })
     await inbox.getByRole("button", { name: "Refresh", exact: true }).click()
     await expect(inbox.getByRole("button", { name: /Team PR 45/ })).toBeVisible()
-    const searches = cli.requests().filter((request) => request.args[1] === "search/issues")
+    const searches = cli.requests().filter((request) => request.q && !request.q.includes("@me"))
     expect(searches.length).toBeGreaterThan(3)
     expect(searches.every((request) => request.pinned && request.args.includes("github.com"))).toBe(true)
     expect(cli.requests().some((request) => request.args.includes("--add-assignee") || request.args.includes("--add-reviewer"))).toBe(false)
@@ -383,7 +388,7 @@ for (const mode of ["personal", "team"] as const) {
       const scope = inbox.getByRole("combobox", { name: "Pull request scope" })
       await expect(scope).toBeEnabled()
       if (mode === "team") await scope.selectOption("7")
-      await expect(inbox.getByText("3 of 3 loaded PRs")).toBeVisible()
+      await expect(inbox.getByText("3 PRs", { exact: true })).toBeVisible()
       await inbox.getByRole("button", { name: /Team PR 42/ }).click()
       const composer = inbox.getByPlaceholder("Leave a comment…")
       await composer.fill("Keep draft while filtering")
@@ -393,7 +398,7 @@ for (const mode of ["personal", "team"] as const) {
         await chips.getByRole("radio", { name: "All", exact: true }).press("ArrowRight")
         await expect(chips.getByRole("radio", { name: "Created", exact: true })).toBeFocused()
         await chips.getByRole("radio", { name: "Created", exact: true }).press("ArrowLeft")
-        await expect(inbox.getByText("3 of 3 loaded PRs")).toBeVisible()
+        await expect(inbox.getByText("3 PRs", { exact: true })).toBeVisible()
         expect(await window.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
       }
       await inbox.getByRole("button", { name: "Filter by repository" }).click()
@@ -401,35 +406,33 @@ for (const mode of ["personal", "team"] as const) {
       await expect(window.getByRole("option", { name: "acme/widget", exact: true })).toHaveCount(0)
       await window.getByRole("option", { name: "acme/unregistered", exact: true }).click()
       await expect(window.getByRole("listbox")).toHaveCount(0)
-      await inbox.getByRole("button", { name: "Filter by author" }).click()
-      await window.getByRole("option", { name: "lee", exact: true }).click()
-      await expect(window.getByRole("listbox")).toHaveCount(0)
-      await inbox.getByRole("button", { name: "Filter by label" }).click()
-      await window.getByRole("option", { name: "Bug", exact: true }).click()
-      await expect(window.getByRole("listbox")).toHaveCount(0)
+      // Author and label are type-ahead: any typed value goes into the GitHub search.
+      await inbox.getByRole("combobox", { name: "Filter by author" }).fill("lee")
+      await inbox.getByRole("combobox", { name: "Filter by label" }).fill("Bug")
       await inbox.getByRole("button", { name: "Filter by draft status" }).click()
       await window.getByRole("option", { name: "Ready", exact: true }).click()
-      await expect(inbox.getByText("1 of 3 loaded PRs")).toBeVisible()
+      await expect(inbox.getByText("1 PR", { exact: true })).toBeVisible()
       await expect(inbox.getByRole("button", { name: /Team PR 46/ })).toBeVisible()
       await expect(inbox.getByRole("button", { name: /Team PR 43/ })).toHaveCount(0)
       await expect(composer).toHaveValue("Keep draft while filtering")
       await inbox.getByRole("button", { name: "Clear filters" }).click()
-      await expect(inbox.getByText("3 of 3 loaded PRs")).toBeVisible()
+      await expect(inbox.getByText("3 PRs", { exact: true })).toBeVisible()
       await expect(composer).toHaveValue("Keep draft while filtering")
       cli.update({ extraFilterRows: 100 })
       await inbox.getByRole("button", { name: "Refresh", exact: true }).click()
-      await expect(inbox.getByText("103 of 103 loaded PRs")).toBeVisible()
-      for (const kind of ["repository", "author", "label"]) {
-        await inbox.getByRole("button", { name: `Filter by ${kind}` }).click()
-        const listbox = window.getByRole("listbox")
-        await expect(listbox).toBeVisible()
-        expect(await listbox.evaluate((node) => node.scrollHeight > node.clientHeight && node.clientHeight <= 241)).toBe(true)
-        await listbox.evaluate((node) => { node.scrollTop = node.scrollHeight })
-        const last = listbox.getByRole("option").last()
-        await expect(last).toBeInViewport()
-        await last.press("Escape")
-        await expect(listbox).toHaveCount(0)
-      }
+      await expect(inbox.getByText("Showing 25 of 103")).toBeVisible()
+      // Scrolling to the end of the list loads the next 25-row page.
+      await inbox.getByRole("button", { name: "Load more" }).scrollIntoViewIfNeeded()
+      await expect(inbox.getByText("Showing 50 of 103")).toBeVisible()
+      await inbox.getByRole("button", { name: "Filter by repository" }).click()
+      const listbox = window.getByRole("listbox")
+      await expect(listbox).toBeVisible()
+      expect(await listbox.evaluate((node) => node.scrollHeight > node.clientHeight && node.clientHeight <= 241)).toBe(true)
+      await listbox.evaluate((node) => { node.scrollTop = node.scrollHeight })
+      const last = listbox.getByRole("option").last()
+      await expect(last).toBeInViewport()
+      await last.press("Escape")
+      await expect(listbox).toHaveCount(0)
       await expect(composer).toHaveValue("Keep draft while filtering")
     } finally { rmSync(cli.root, { recursive: true, force: true }) }
   })

@@ -1,6 +1,6 @@
-import { useCallback, useRef } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useMachine } from "@xstate/react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { activeCheckoutOf } from "@jingler/core"
 import type {
   PrMergeMethod,
@@ -14,6 +14,20 @@ import type {
 } from "@jingler/core"
 import { rpc } from "./rpc-client.js"
 import { pullRequestInboxMachine } from "./pull-request-inbox-machine.js"
+import { retryUnlessRateLimited } from "./github-poll.js"
+import type { PullRequestInboxQuery } from "@jingler/ui"
+
+const NO_FILTERS = { relationship: "all", repository: "", author: "", label: "", draft: "all", text: "" } as const
+const DEFAULT_QUERY: PullRequestInboxQuery = { kind: "search", filters: NO_FILTERS }
+
+/** A rate limit names when paging resumes; everything else keeps its own message. */
+const listMessage = (error: unknown): string | null => {
+  const failure = error as { reason?: string; retryAt?: string; message?: string } | null
+  if (failure?.reason !== "rate-limited") return failure?.message ?? null
+  return failure.retryAt
+    ? `GitHub rate limit, resumes at ${new Date(failure.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : "GitHub rate limit reached. Try again shortly."
+}
 
 export function pullRequestSessionTarget(
   pr: PullRequestListItem,
@@ -76,6 +90,87 @@ const personalDetailData = (placeholder: PersonalIdentityPlaceholder | null, dat
   return data ?? placeholder?.data ?? null
 }
 
+type ListInput = {
+  readonly accountId: string | undefined
+  readonly organization: string | undefined
+  readonly teamSlug: string | undefined
+  readonly teamInput: { accountId: string; organization: string; teamSlug: string; queue: GitHubTeamQueue } | null
+  readonly teamMode: boolean
+  readonly ready: boolean
+  readonly revision: number
+  readonly refreshDiscovery: boolean
+}
+
+/** The inbox list: paged search, the session's linked PRs, and the background repository list. */
+function usePullRequestList(input: ListInput) {
+  const { teamInput, teamMode, ready } = input
+  const [inboxQuery, setInboxQuery] = useState<PullRequestInboxQuery>(DEFAULT_QUERY)
+  const search = inboxQuery.kind === "search" ? inboxQuery.filters : null
+  // One 25-row page per scroll; filters are search qualifiers, so later pages never hide matches.
+  const list = useInfiniteQuery({
+    queryKey: ["github", "pr-inbox", "list", input.accountId, input.organization, input.teamSlug, teamInput?.queue ?? null, search],
+    queryFn: ({ pageParam }) => rpc.githubPrSearch({
+      filters: search ?? NO_FILTERS, team: teamInput, after: pageParam,
+      refresh: pageParam === null && teamMode && input.refreshDiscovery,
+    }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.hasNextPage ? last.endCursor ?? undefined : undefined,
+    enabled: search !== null && (!teamMode || ready && teamInput !== null),
+    staleTime: 60_000,
+    retry: retryUnlessRateLimited,
+    // Past staleTime, focus re-reads the loaded pages; rows stay until fresh ones land.
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: false,
+  })
+  const sessionKeys = inboxQuery.kind === "session" ? inboxQuery.keys : null
+  const sessionList = useQuery({
+    queryKey: ["github", "pr-inbox", "session", input.accountId, sessionKeys],
+    queryFn: () => rpc.githubPrsByKey(sessionKeys ?? []),
+    enabled: sessionKeys !== null,
+    staleTime: 60_000,
+    retry: retryUnlessRateLimited,
+  })
+  const repositories = useQuery({
+    queryKey: ["github", "repositories", input.accountId],
+    queryFn: rpc.githubRepositories,
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = list
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+  const activeList = sessionKeys !== null ? sessionList : list
+  return {
+    // A failed or running team discovery must not show the last team's rows.
+    ...listView(sessionKeys !== null ? sessionList.data ?? [] : null, teamMode && !ready ? [] : list.data?.pages ?? [], activeList.error),
+    pending: activeList.isPending,
+    hasMore: sessionKeys === null && hasNextPage,
+    loadingMore: isFetchingNextPage,
+    loadMoreError: list.isFetchNextPageError ? listMessage(list.error) : null,
+    loadMore,
+    setQuery: setInboxQuery,
+    repositoryOptions: repositories.data?.map((repository) => repository.fullName) ?? [],
+  }
+}
+
+/** Rows, total and warnings for either the session's linked PRs (`session`) or the loaded search pages. */
+const listView = (
+  session: ReadonlyArray<PullRequestListItem> | null,
+  pages: ReadonlyArray<{ prs: ReadonlyArray<PullRequestListItem>; total: number; warnings: ReadonlyArray<string> }>,
+  error: unknown
+) => {
+  // Sorting by updated time can shift a row across a page boundary; keep the first copy.
+  const rows = [...new Map((session ?? pages.flatMap((page) => page.prs))
+    .map((pr) => [`${pr.repository.toLowerCase()}#${pr.number}`, pr])).values()]
+  const listError = listMessage(error)
+  const warnings = [...new Set([
+    ...(session === null ? pages.flatMap((page) => page.warnings) : []),
+    ...(listError !== null && rows.length > 0 ? [listError] : []),
+  ])]
+  return { rows, listError, warnings, total: session !== null ? rows.length : pages[0]?.total ?? 0 }
+}
+
 export function usePullRequestInbox(_connected: boolean) {
   const [state, send] = useMachine(pullRequestInboxMachine, { input: { discover: rpc.githubTeams } })
   const { account, teams, teamId, queue, selected, revision, discoveryError } = state.context
@@ -84,22 +179,12 @@ export function usePullRequestInbox(_connected: boolean) {
   const teamMode = teamId !== null
   const ready = state.matches("ready")
   const queryClient = useQueryClient()
-  const list = useQuery({
-    queryKey: ["github", "pr-inbox", "personal", identity.accountId, revision],
-    queryFn: rpc.githubPrInbox,
-    enabled: !teamMode,
+  const listState = usePullRequestList({
+    accountId: identity.accountId, organization: identity.organization, teamSlug: identity.teamSlug,
+    teamInput: teamMode && account && team ? { accountId: account.id, organization: team.organization, teamSlug: team.slug, queue } : null,
+    teamMode, ready, revision, refreshDiscovery: state.context.refreshDiscovery,
   })
-  const teamList = useQuery({
-    queryKey: ["github", "pr-inbox", "team", identity.accountId, identity.organization, identity.teamSlug, queue, revision],
-    queryFn: () => account && team ? rpc.githubTeamPrs({
-      accountId: account.id, organization: team.organization, teamSlug: team.slug,
-      queue, refresh: state.context.refreshDiscovery,
-    }) : Promise.reject(new Error("Refresh teams first.")),
-    enabled: teamMode && ready && account !== null && team !== undefined,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const { rows, listError } = listState
   const personalIdentityPlaceholder = useRef<PersonalIdentityPlaceholder | null>(null)
   const placeholder = preparePersonalIdentityPlaceholder(personalIdentityPlaceholder.current, identity.accountId, teamMode, selected)
   personalIdentityPlaceholder.current = placeholder
@@ -130,6 +215,11 @@ export function usePullRequestInbox(_connected: boolean) {
   // Focus/visibility share their read; an explicit refresh supersedes an older one.
   const discover = useCallback((cancelRefetch = false) => {
     void queryClient.invalidateQueries({ queryKey: ["github", "pr-inbox", "detail"] }, { cancelRefetch })
+    // Only an explicit Refresh re-reads the list; it keeps the loaded rows until fresh ones land.
+    if (cancelRefetch) {
+      void queryClient.invalidateQueries({ queryKey: ["github", "pr-inbox", "list"] })
+      void queryClient.invalidateQueries({ queryKey: ["github", "pr-inbox", "session"] })
+    }
     send({ type: "DISCOVER" })
   }, [queryClient, send])
   const target = teamPrTarget(selected, ready ? account : null)
@@ -170,19 +260,20 @@ export function usePullRequestInbox(_connected: boolean) {
   }
   const message = (error: unknown) => (error as { message?: string } | null)?.message ?? null
 
-  const teamData = ready ? teamList.data : undefined
-  const currentList = teamMode ? teamList : list
-  const rows = () => {
-    if (teamMode) return teamData?.prs ?? []
-    return list.data ?? []
-  }
   const listLoading = () => {
-    if (teamMode) return state.matches("discovering") || ready && teamList.isPending
-    return list.isPending
+    if (teamMode) return state.matches("discovering") || ready && listState.pending
+    return listState.pending
   }
 
   return {
-    prs: rows(),
+    prs: rows,
+    total: listState.total,
+    hasMore: listState.hasMore,
+    loadingMore: listState.loadingMore,
+    loadMore: listState.loadMore,
+    loadMoreError: listState.loadMoreError,
+    setQuery: listState.setQuery,
+    repositoryOptions: listState.repositoryOptions,
     viewerLogin: pullRequestInboxViewerLogin(teamMode, ready, identity.viewerLogin),
     cliAccountId: teamMode ? identity.accountId : undefined,
     teams,
@@ -194,7 +285,7 @@ export function usePullRequestInbox(_connected: boolean) {
     refreshInbox: () => discover(true),
     discovering: state.matches("discovering"),
     discoveryError,
-    warnings: teamData?.warnings ?? [],
+    warnings: listState.warnings,
     selected,
     select: (pr: PullRequestListItem) => { resetActionErrors(); send({ type: "SELECT", pr }) },
     detail: detailData,
@@ -209,6 +300,6 @@ export function usePullRequestInbox(_connected: boolean) {
     closeError: message(closeMutation.error),
     merging: mergeMutation.isPending,
     mergeError: message(mergeMutation.error),
-    error: message(currentList.error) ?? (teamMode ? discoveryError : null),
+    error: (rows.length > 0 ? null : listError) ?? (teamMode ? discoveryError : null),
   }
 }
