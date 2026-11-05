@@ -4,7 +4,7 @@ import type { RelayedToolCall } from "./claude-cli-sampling-relay.js"
 const RELAY_TOOL_PREFIX = "mcp__jingler__"
 const NO_SUCH_TOOL = "No such tool available"
 
-const recordOf = (value: unknown): Record<string, unknown> | null =>
+export const recordOf = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null

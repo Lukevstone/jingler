@@ -8,7 +8,9 @@ import {
   checkClaudeSubscription,
   claudeCliArguments,
   readClaudeLogin,
-  createClaudeCliStreamSimple
+  createClaudeCliStreamSimple,
+  transcriptContent,
+  TOOLS_FINISHED_NOTE
 } from "./claude-cli-provider.js"
 
 const model = fauxProvider({ provider: "anthropic", api: "anthropic-messages" }).getModel()
@@ -393,6 +395,59 @@ setInterval(() => {}, 1000)
     })
     const done = events.at(-1)
     expect(done?.type === "done" ? done.reason : null).toBe("toolUse")
+  })
+
+  it("runs a tool call the model typed as text, and drops the result it made up", async () => {
+    const delta = (text: string) => JSON.stringify({
+      type: "stream_event",
+      event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }
+    })
+    const lines = [
+      "Reading it.\n\n<br>",
+      '<jingler-tool-call id="x" name="workspace_read_file">\n{"path":"package.json"}\n</jingler-tool-call>',
+      '<jingler-tool-result id="x">made up</jingler-tool-result>'
+    ].map((text) => `console.log(${JSON.stringify(delta(text))})`).join("\n")
+    const binary = await executable(`process.stdin.resume()\n${lines}\nsetInterval(() => {}, 1000)`)
+    const events = await collect(createClaudeCliStreamSimple({
+      binary,
+      checkAuth: async () => {},
+      startToolRelay: async () => ({ mcpConfigPath: "/tmp/mcp.json", toolCall: new Promise(() => {}), close: async () => {} })
+    })(model, context))
+    const text = events.flatMap((event) => event.type === "text_delta" ? [event.delta] : []).join("")
+    expect(text).toBe("Reading it.\n\n")
+    const tool = events.find(({ type }) => type === "toolcall_end")
+    expect(tool?.type === "toolcall_end" ? tool.toolCall : null).toMatchObject({
+      name: "workspace_read_file",
+      arguments: { path: "package.json" }
+    })
+    const done = events.at(-1)
+    expect(done?.type === "done" ? done.reason : null).toBe("toolUse")
+  })
+
+  it("replays past tool use as plain records, never as markup to copy", () => {
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+    const replay = normalizeContext({
+      ...rawContext,
+      messages: [
+        ...rawContext.messages,
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "c1", name: "workspace_read_file", arguments: { path: "a.lua" } }],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage,
+          stopReason: "toolUse",
+          timestamp: 2
+        },
+        { role: "toolResult", toolCallId: "c1", toolName: "workspace_read_file", content: [{ type: "text", text: "no such file" }], isError: true, timestamp: 3 }
+      ]
+    })
+    const text = transcriptContent(replay).flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
+    expect(text).toContain('Called workspace_read_file with {"path":"a.lua"}. This call already ran.')
+    expect(text).toContain("workspace_read_file finished with an error. Its output:\nno such file")
+    expect(text.endsWith(TOOLS_FINISHED_NOTE)).toBe(true)
+    expect(text).not.toContain("jingler-tool-")
   })
 
   it("records the request's usage on a turn that ends in a tool call", async () => {
