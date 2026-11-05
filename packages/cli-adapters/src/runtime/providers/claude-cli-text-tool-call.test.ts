@@ -48,9 +48,51 @@ describe("makeTextToolCallGuard", () => {
     ["mid-sentence", `The tag ${typed('{"command":"ls"}')} is replay markup`],
     ["for a tool pi did not offer", typed('{"command":"ls"}', "rm_everything")],
     ["with arguments that do not parse", typed("not json")],
-    ["with no closing tag", '<jingler-tool-call id="a" name="command_execute">\n{"command":']
+    ["with no closing tag", '<jingler-tool-call id="a" name="command_execute">\n{"command":'],
+    ["in a tilde fence", `~~~\n${typed('{"command":"ls"}')}\n~~~`],
+    ["in an indented fence", `  \`\`\`\n${typed('{"command":"ls"}')}\n  \`\`\``],
+    ["in a double-backtick span", `Here: \`\`${typed('{"command":"ls"}')}\`\``],
+    ["in a multiline code span", `Here: \`\n${typed('{"command":"ls"}')}\n\``],
+    ["in an indented code block", `Example:\n\n    ${typed('{"command":"ls"}')}`]
   ])("leaves text untouched %s", (_label, input) => {
     expect(scan(input)).toEqual({ text: input, call: null })
+  })
+
+  it.each([1, 7, 1000])("reads past both delimiters inside a JSON string, %i characters at a time", (size) => {
+    const content = `<jingler-tool-call id="a" name="x">\n</jingler-tool-call> "quoted" \\`
+    const body = JSON.stringify({ path: "docs/markup.md", content })
+    const { text, call } = scan(typed(body, "workspace_write"), size)
+    expect(text).toBe("")
+    expect(call).toMatchObject({ name: "workspace_write", arguments: { path: "docs/markup.md", content } })
+  })
+
+  it("does not treat quotes in a parameter value as a JSON string", () => {
+    const body = `<jingler-parameter name="path">a.lua</jingler-parameter>\n<jingler-parameter name="content">say "hi</jingler-parameter>`
+    expect(scan(typed(body, "workspace_write")).call).toMatchObject({
+      arguments: { path: "a.lua", content: 'say "hi' }
+    })
+  })
+
+  it("releases the reply straight away after a header for a tool pi did not offer", () => {
+    const guard = makeTextToolCallGuard(offered)
+    const header = '<jingler-tool-call id="a" name="rm_everything">'
+    expect(guard.push(header).text).toBe(header)
+    expect(guard.push("\nthe rest of the reply").text).toBe("\nthe rest of the reply")
+  })
+
+  it("still catches a real call after an unoffered header", () => {
+    const { call } = scan(`<jingler-tool-call id="a" name="rm_everything">\n\n${typed('{"command":"real"}')}`)
+    expect(call).toMatchObject({ arguments: { command: "real" } })
+  })
+
+  it("does not rescan a long call body on every delta", () => {
+    const guard = makeTextToolCallGuard(offered)
+    guard.push('<jingler-tool-call id="a" name="workspace_write">\n{"path":"a","content":"')
+    const started = performance.now()
+    for (let index = 0; index < 20_000; index += 1) guard.push("x".repeat(50))
+    const { call } = guard.push('"}\n</jingler-tool-call>')
+    expect(call).toMatchObject({ name: "workspace_write" })
+    expect(performance.now() - started).toBeLessThan(2_000)
   })
 
   it("still catches a real call after quoted markup", () => {

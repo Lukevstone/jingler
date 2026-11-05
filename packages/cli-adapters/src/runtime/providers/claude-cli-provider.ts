@@ -235,6 +235,13 @@ export const TOOLS_FINISHED_NOTE = "All tool calls above have finished. Continue
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: protocol serialization stays auditable here.
 export function transcriptContent(context: TranscriptContext): ReadonlyArray<ClaudeInputContent> {
   const content: Array<ClaudeInputContent> = []
+  // Raw ids here made Haiku repeat finished calls: 0 of 6 live runs passed, against 12 of 14 with short numbers.
+  const numbers = new Map<string, number>()
+  const callNumber = (id: string): number => {
+    const number = numbers.get(id) ?? numbers.size + 1
+    numbers.set(id, number)
+    return number
+  }
   for (const message of context.messages) {
     if (message.role === "system") continue
     if (message.role === "user") {
@@ -259,7 +266,7 @@ export function transcriptContent(context: TranscriptContext): ReadonlyArray<Cla
         .join("\n")
       content.push({
         type: "text",
-        text: `<jingler-message role="tool">\n${message.toolName} finished${message.isError ? " with an error" : ""}. Its output:\n${output}\n</jingler-message>`
+        text: `<jingler-message role="tool">\nCall #${callNumber(message.toolCallId)}: ${message.toolName} finished${message.isError ? " with an error" : ""}. Its output:\n${output}\n</jingler-message>`
       })
       continue
     }
@@ -269,7 +276,7 @@ export function transcriptContent(context: TranscriptContext): ReadonlyArray<Cla
       else if (part.type === "thinking") continue
       else content.push({
         type: "text",
-        text: `Called ${part.name} with ${JSON.stringify(part.arguments)}. This call already ran.`
+        text: `Call #${callNumber(part.id)}: called ${part.name} with ${JSON.stringify(part.arguments)}. This call already ran.`
       })
     }
     content.push({ type: "text", text: "</jingler-message>" })

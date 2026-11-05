@@ -432,7 +432,10 @@ setInterval(() => {}, 1000)
         ...rawContext.messages,
         {
           role: "assistant",
-          content: [{ type: "toolCall", id: "c1", name: "workspace_read_file", arguments: { path: "a.lua" } }],
+          content: [
+            { type: "toolCall", id: "c1", name: "workspace_read_file", arguments: { path: "a.lua" } },
+            { type: "toolCall", id: "c2", name: "workspace_read_file", arguments: { path: "b.lua" } }
+          ],
           api: model.api,
           provider: model.provider,
           model: model.id,
@@ -440,12 +443,15 @@ setInterval(() => {}, 1000)
           stopReason: "toolUse",
           timestamp: 2
         },
-        { role: "toolResult", toolCallId: "c1", toolName: "workspace_read_file", content: [{ type: "text", text: "no such file" }], isError: true, timestamp: 3 }
+        { role: "toolResult", toolCallId: "c2", toolName: "workspace_read_file", content: [{ type: "text", text: "b contents" }], isError: false, timestamp: 3 },
+        { role: "toolResult", toolCallId: "c1", toolName: "workspace_read_file", content: [{ type: "text", text: "no such file" }], isError: true, timestamp: 4 }
       ]
     })
     const text = transcriptContent(replay).flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
-    expect(text).toContain('Called workspace_read_file with {"path":"a.lua"}. This call already ran.')
-    expect(text).toContain("workspace_read_file finished with an error. Its output:\nno such file")
+    expect(text).toContain('Call #1: called workspace_read_file with {"path":"a.lua"}. This call already ran.')
+    expect(text).toContain('Call #2: called workspace_read_file with {"path":"b.lua"}. This call already ran.')
+    expect(text).toContain("Call #1: workspace_read_file finished with an error. Its output:\nno such file")
+    expect(text).toContain("Call #2: workspace_read_file finished. Its output:\nb contents")
     expect(text.endsWith(TOOLS_FINISHED_NOTE)).toBe(true)
     expect(text).not.toContain("jingler-tool-")
   })
