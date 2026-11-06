@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.22.3
+
+### Patch Changes
+
+- e094ebf: Claude no longer prints tool calls into the chat as text. A call typed that way now runs as a real one, so turns stop stalling and edits stop going missing.
+  - @jingler/plannotator-ext@0.22.3
+
 ## 0.22.2
 
 ### Patch Changes
