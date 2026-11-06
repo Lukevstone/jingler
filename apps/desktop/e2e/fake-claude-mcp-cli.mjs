@@ -46,7 +46,7 @@ if (!toolNames.includes("mcp_search") || !toolNames.includes("mcp_call")) {
   fail("Claude did not inherit Jingler MCP tools")
 }
 
-if (transcript.includes('name="mcp_call"')) {
+if (transcript.includes("called mcp_call with")) {
   if (!transcript.includes("Paper canvas inspected through Jingler MCP")) {
     fail("Claude did not receive the Paper MCP result")
   }
@@ -63,6 +63,6 @@ if (transcript.includes('name="mcp_call"')) {
   process.exit(0)
 }
 
-await client.callTool(transcript.includes('name="mcp_search"')
+await client.callTool(transcript.includes("called mcp_search with")
   ? { name: "mcp_call", arguments: { server: "paper", tool: "inspect_design", arguments: {} } }
   : { name: "mcp_search", arguments: { query: "inspect_design", server: "paper" } })

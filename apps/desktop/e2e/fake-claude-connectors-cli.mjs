@@ -32,7 +32,7 @@ const say = (text) => {
   process.exit(0)
 }
 // Jingler interrupts Claude after a relay tool call and re-runs it with the result in the transcript.
-if (transcript.includes('name="mcp_search"')) {
+if (transcript.includes("called mcp_search with")) {
   say(transcript.includes("claude-ai-linear") && transcript.includes("lookup")
     ? "Claude saw the imported Linear connector."
     : `Claude missed the connector: ${transcript}`)
