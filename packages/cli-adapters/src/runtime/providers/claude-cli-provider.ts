@@ -29,6 +29,7 @@ import { recordClaudeCliRateLimits } from "./claude-cli-rate-limits.js"
 import { claudeArtifactEnvironment, claudeToolArguments, publishedArtifactUrl, withClaudeCliPath } from "./claude-cli-environment.js"
 import { ClaudeRequestUsage, ClaudeTurnUsage } from "./claude-cli-usage.js"
 import { makeClaudeCliToolRescue, toolResultTexts } from "./claude-cli-tool-rescue.js"
+import { makeTextToolCallGuard } from "./claude-cli-text-tool-call.js"
 
 const ClaudeAuthStatus = Schema.Struct({
   loggedIn: Schema.Boolean,
@@ -227,10 +228,20 @@ type ClaudeInputContent =
       }
     }
 
+/** Without a closing line the replay stops on a tool result, and weaker models call the tool again. */
+export const TOOLS_FINISHED_NOTE = "All tool calls above have finished. Continue from their output."
+
 // The three Pi message variants are clearer serialized together than behind dispatch helpers.
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: protocol serialization stays auditable here.
-function transcriptContent(context: TranscriptContext): ReadonlyArray<ClaudeInputContent> {
+export function transcriptContent(context: TranscriptContext): ReadonlyArray<ClaudeInputContent> {
   const content: Array<ClaudeInputContent> = []
+  // Raw ids here made Haiku repeat finished calls: 0 of 6 live runs passed, against 12 of 14 with short numbers.
+  const numbers = new Map<string, number>()
+  const callNumber = (id: string): number => {
+    const number = numbers.get(id) ?? numbers.size + 1
+    numbers.set(id, number)
+    return number
+  }
   for (const message of context.messages) {
     if (message.role === "system") continue
     if (message.role === "user") {
@@ -255,7 +266,7 @@ function transcriptContent(context: TranscriptContext): ReadonlyArray<ClaudeInpu
         .join("\n")
       content.push({
         type: "text",
-        text: `<jingler-tool-result id=${JSON.stringify(message.toolCallId)} name=${JSON.stringify(message.toolName)} error=${JSON.stringify(message.isError)}>\n${output}\n</jingler-tool-result>`
+        text: `<jingler-message role="tool">\nCall #${callNumber(message.toolCallId)}: ${message.toolName} finished${message.isError ? " with an error" : ""}. Its output:\n${output}\n</jingler-message>`
       })
       continue
     }
@@ -265,10 +276,13 @@ function transcriptContent(context: TranscriptContext): ReadonlyArray<ClaudeInpu
       else if (part.type === "thinking") continue
       else content.push({
         type: "text",
-        text: `<jingler-tool-call id=${JSON.stringify(part.id)} name=${JSON.stringify(part.name)}>\n${JSON.stringify(part.arguments)}\n</jingler-tool-call>`
+        text: `Call #${callNumber(part.id)}: called ${part.name} with ${JSON.stringify(part.arguments)}. This call already ran.`
       })
     }
     content.push({ type: "text", text: "</jingler-message>" })
+  }
+  if (context.messages.findLast(({ role }) => role !== "system")?.role === "toolResult") {
+    content.push({ type: "text", text: TOOLS_FINISHED_NOTE })
   }
   return content
 }
@@ -287,11 +301,14 @@ const effortArgs = (reasoning: SimpleStreamOptions["reasoning"]): ReadonlyArray<
   return ["--effort", "high"]
 }
 
+const TOOL_HISTORY_POLICY = "Earlier tool calls and results appear in the conversation as plain text records of calls that already finished. Use those results, and don't repeat a call unless you need fresh output. To use a tool, make a real tool call. Never type a tool call or a tool result into your reply."
+const MCP_POLICY = "Jingler's configured MCP services are available through mcp_search and mcp_call. When the user asks to use or inspect a named service, call mcp_search for that service before taking other action, then use mcp_call as needed. Never claim to have used a service without a successful tool result."
+
 const systemPrompt = (context: TranscriptContext): string => {
-  const prompt = getCurrentSystemPrompt(context.messages)
-  if (!getCurrentTools(context.messages).some(({ name }) => name === "mcp_search")) return prompt
-  const policy = "Jingler's configured MCP services are available through mcp_search and mcp_call. When the user asks to use or inspect a named service, call mcp_search for that service before taking other action, then use mcp_call as needed. Never claim to have used a service without a successful tool result."
-  return prompt.length === 0 ? policy : `${prompt}\n\n${policy}`
+  const hasMcp = getCurrentTools(context.messages).some(({ name }) => name === "mcp_search")
+  return [getCurrentSystemPrompt(context.messages), TOOL_HISTORY_POLICY, hasMcp ? MCP_POLICY : ""]
+    .filter((section) => section.length > 0)
+    .join("\n\n")
 }
 
 export const claudeCliArguments = (
@@ -459,9 +476,14 @@ interface ClaudeOutputState {
   /** Latest per-request usage seen on the stream (message_delta supersedes message_start). */
   usage: ClaudeRequestUsage | null
   open: OpenContent | null
-  /** A call the CLI rejected although pi offered the tool; see claude-cli-tool-rescue. */
+  /** A call the CLI rejected, or one typed as text, for a tool pi offered. */
   rescued: RelayedToolCall | null
 }
+
+const textDelta = (text: string): typeof ClaudeStreamDelta.Type => ({
+  type: "stream_event",
+  event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }
+})
 
 /**
  * Artifact runs inside this CLI process, which is killed as soon as a relayed
@@ -471,9 +493,7 @@ interface ClaudeOutputState {
  */
 const artifactNotice = (record: unknown): typeof ClaudeStreamDelta.Type | null => {
   const url = toolResultTexts(record).map(publishedArtifactUrl).find((found) => found !== null)
-  return url === undefined
-    ? null
-    : { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `\n\nPublished artifact: ${url}\n\n` } } }
+  return url === undefined ? null : textDelta(`\n\nPublished artifact: ${url}\n\n`)
 }
 
 /** Only these whole-message records can carry a rejected tool call or the CLI's tool list. */
@@ -513,17 +533,33 @@ async function* streamClaudeOutput(
   child: ChildProcessWithoutNullStreams,
   partial: AssistantMessage,
   state: ClaudeOutputState,
-  rescue: ReturnType<typeof makeClaudeCliToolRescue>
+  rescue: ReturnType<typeof makeClaudeCliToolRescue>,
+  guard: ReturnType<typeof makeTextToolCallGuard>
 ): AsyncGenerator<AssistantMessageEvent> {
+  const emit = function* (delta: typeof ClaudeStreamDelta.Type): Generator<AssistantMessageEvent> {
+    const next = deltaEvents(partial, state.open, delta)
+    state.open = next.open
+    yield* next.events
+  }
   const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
   for await (const line of lines) {
     const read = readClaudeLine(line, state, rescue)
-    if (read === "stop") return
+    if (read === "stop") break
     if (read === null) continue
-    const next = deltaEvents(partial, state.open, read)
-    state.open = next.open
-    for (const event of next.events) yield event
+    if (read.event.delta.type !== "text_delta") {
+      yield* emit(read)
+      continue
+    }
+    const scan = guard.push(read.event.delta.text)
+    if (scan.text.length > 0) yield* emit(textDelta(scan.text))
+    if (scan.call !== null) {
+      console.warn(`[claude-cli] ran ${scan.call.name}: the model typed the call as text`)
+      state.rescued = scan.call
+      return
+    }
   }
+  const held = guard.flush()
+  if (held.length > 0) yield* emit(textDelta(held))
 }
 
 const terminalEvents = (
@@ -618,8 +654,10 @@ async function* runClaudeCli(
     options.signal?.addEventListener("abort", onAbort, { once: true })
     if (options.signal?.aborted) onAbort()
     if (!child.stdin.writableEnded) child.stdin.end(`${inputLine(context)}\n`)
-    const rescue = makeClaudeCliToolRescue(new Set(getCurrentTools(context.messages).map(({ name }) => name)))
-    for await (const event of streamClaudeOutput(child, partial, output, rescue)) yield event
+    const offered = new Set(getCurrentTools(context.messages).map(({ name }) => name))
+    const rescue = makeClaudeCliToolRescue(offered)
+    const guard = makeTextToolCallGuard(offered)
+    for await (const event of streamClaudeOutput(child, partial, output, rescue, guard)) yield event
     if (toolCall === null && output.rescued !== null) {
       toolCall = output.rescued
       await stop()
