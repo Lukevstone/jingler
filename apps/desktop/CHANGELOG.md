@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.22.5
+
+### Patch Changes
+
+- d570fa7: Voice input now works in the New workspace composer too.
+  - @jingler/plannotator-ext@0.22.5
+
 ## 0.22.4
 
 ### Patch Changes

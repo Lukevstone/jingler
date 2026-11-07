@@ -1,5 +1,7 @@
 # @jingler/plugin-security
 
+## 0.22.5
+
 ## 0.22.4
 
 ## 0.22.3
