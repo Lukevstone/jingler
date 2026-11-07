@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { appShell, expect, test } from "./fixtures.js"
+import { addProject, appShell, expect, test } from "./fixtures.js"
 
 const whisper = resolve(import.meta.dirname, "fake-whisper-cli.mjs")
 
@@ -231,4 +231,23 @@ test("leaving Home mid-recording stops Superwhisper", async ({ launchApp }) => {
   await expect(window.getByTestId("new-session-view")).toBeVisible()
   await expect.poll(() => readFileSync(log, "utf8")).toBe("superwhisper://record/start\nsuperwhisper://record/stop\n")
   rmSync(log, { force: true })
+})
+
+test("dictating in New workspace puts the transcript in its composer", async ({ launchApp }) => {
+  const { window, home, repoPath } = await launchApp({ configured: true, withRepo: true, e2eEnv: { JINGLER_WHISPER_BIN: whisper } })
+  await expect(appShell(window)).toBeVisible()
+  const models = join(home, "jingler", "models", "whisper")
+  mkdirSync(models, { recursive: true })
+  writeFileSync(join(models, "ggml-base.bin"), "fake")
+  await window.getByTestId("new-session").click()
+  await addProject(window, repoPath)
+  const view = window.getByTestId("new-session-view")
+  const composer = view.getByRole("textbox").first()
+  await composer.fill("Please")
+  await view.getByRole("button", { name: "Voice input", exact: true }).click()
+  await expect(view.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible()
+  await window.waitForTimeout(800)
+  await view.getByRole("button", { name: "Stop recording", exact: true }).click()
+  await expect(composer).toHaveValue("Please add a retry to the login test", { timeout: 20_000 })
+  await expect(view).toBeVisible()
 })

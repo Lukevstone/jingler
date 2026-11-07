@@ -35,7 +35,8 @@ import { GithubMark } from "../components/github-mark.js";
 import { LinearMark } from "../components/linear-mark.js";
 import { cn } from "../lib/cn.js";
 import type { PendingEnvironmentSession } from "../app/environment-session-startup-machine.js";
-import { Composer } from "./composer.js";
+import { Composer, type ComposerVoiceInput } from "./composer.js";
+import type { HomeVoiceProvider } from "../screens/empty-conversation.js";
 import {
   AUTO_PROJECT_ID,
   newWorkspaceMachine,
@@ -232,6 +233,8 @@ export interface NewWorkspaceViewProps {
   onAddProject?: () => void;
   onImportSessions?: () => void;
   onClose: () => void;
+  /** Adds the mic to the composer; omitted hosts get no voice input. */
+  voiceProvider?: HomeVoiceProvider;
 }
 
 const startupEnvironment = (startup: PendingEnvironmentSession | null | undefined, selected: Environment | undefined) =>
@@ -287,7 +290,9 @@ function WorkspaceComposer({ submitting, context, props, catalog, unavailableRea
   unavailableReason: string | undefined; controls: React.ReactNode; selectedProject: Project | undefined; send: WorkspaceSend
 }) {
   const { draft, attachments, source, selectedPr, baseBranch, environmentId, connectionId, providerId, modelId, mode, reasoning } = context
-  return <Composer submitting={submitting} preserveDraftOnSend autoFocus focusKey="new-session" value={draft} onValueChange={(value) => send({ type: "SET_DRAFT", draft: value })} attachments={attachments} onAttachmentsChange={(next) => send({ type: "SET_ATTACHMENTS", attachments: next })} onSend={() => send({ type: "SUBMIT" })} placeholder={workspacePrompt(source)} repo={selectedProject?.name} branch={selectedBranch(source, selectedPr?.headRefName, baseBranch)} environments={props.environments} environmentId={remoteEnvironmentId(environmentId)} onSetEnvironment={(props.environments?.length ?? 0) > 0 ? (value) => send({ type: "SET_ENVIRONMENT", environmentId: value ?? "local" }) : undefined} providerCatalog={props.providerCatalog} agentEndpointCatalog={catalog} endpointId={context.endpointId} connectionId={connectionId} providerId={providerId} modelId={modelId} onSetModel={(selection) => send({ type: "SET_MODEL", ...selection })} mode={mode} onSetMode={(value) => send({ type: "SET_MODE", mode: value })} reasoningEffort={reasoning?.effort} thinkingEnabled={reasoning?.enabled} onSetReasoning={(value) => send({ type: "SET_REASONING", reasoning: value })} disabledReason={unavailableReason} contextControls={controls} />
+  const composer = (voiceInput?: ComposerVoiceInput) => <Composer voiceInput={voiceInput} submitting={submitting} preserveDraftOnSend autoFocus focusKey="new-session" value={draft} onValueChange={(value) => send({ type: "SET_DRAFT", draft: value })} attachments={attachments} onAttachmentsChange={(next) => send({ type: "SET_ATTACHMENTS", attachments: next })} onSend={() => send({ type: "SUBMIT" })} placeholder={workspacePrompt(source)} repo={selectedProject?.name} branch={selectedBranch(source, selectedPr?.headRefName, baseBranch)} environments={props.environments} environmentId={remoteEnvironmentId(environmentId)} onSetEnvironment={(props.environments?.length ?? 0) > 0 ? (value) => send({ type: "SET_ENVIRONMENT", environmentId: value ?? "local" }) : undefined} providerCatalog={props.providerCatalog} agentEndpointCatalog={catalog} endpointId={context.endpointId} connectionId={connectionId} providerId={providerId} modelId={modelId} onSetModel={(selection) => send({ type: "SET_MODEL", ...selection })} mode={mode} onSetMode={(value) => send({ type: "SET_MODE", mode: value })} reasoningEffort={reasoning?.effort} thinkingEnabled={reasoning?.enabled} onSetReasoning={(value) => send({ type: "SET_REASONING", reasoning: value })} disabledReason={unavailableReason} contextControls={controls} />
+  const VoiceProvider = props.voiceProvider
+  return VoiceProvider ? <VoiceProvider onText={(update) => send({ type: "SET_DRAFT", draft: update(draft) })}>{composer}</VoiceProvider> : composer()
 }
 
 function WorkspaceStartFrom({ props, context, send, icon, label, loading }: {
