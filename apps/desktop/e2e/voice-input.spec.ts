@@ -197,3 +197,38 @@ test("with Superwhisper installed Home's mic drives it and its paste lands in th
   await expect(composer).toHaveValue("pasted by superwhisper")
   rmSync(log, { force: true })
 })
+
+test("holding the key on Home dictates into the composer, and does nothing once Home is gone", async ({ launchApp }) => {
+  const { window, home, composer } = await openHome(launchApp, { JINGLER_WHISPER_BIN: whisper })
+  const models = join(home, "jingler", "models", "whisper")
+  mkdirSync(models, { recursive: true })
+  writeFileSync(join(models, "ggml-base.bin"), "fake")
+
+  await window.keyboard.down("F9")
+  await expect(window.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible()
+  await window.waitForTimeout(800)
+  await window.keyboard.up("F9")
+  await expect(composer).toHaveValue("add a retry to the login test", { timeout: 20_000 })
+
+  await window.getByTestId("new-session").click()
+  await expect(window.getByTestId("new-session-view")).toBeVisible()
+  await window.keyboard.down("F9")
+  await window.waitForTimeout(500)
+  await window.keyboard.up("F9")
+  await window.getByRole("button", { name: "Close new session", exact: true }).click()
+  await expect(composer).toBeVisible()
+  await expect(window.getByRole("button", { name: "Voice input", exact: true })).toBeEnabled()
+  await expect(composer).toHaveValue("")
+})
+
+test("leaving Home mid-recording stops Superwhisper", async ({ launchApp }) => {
+  const log = join(tmpdir(), `superwhisper-leave-${Date.now()}.log`)
+  const { window, composer } = await openHome(launchApp, { JINGLER_E2E_SUPERWHISPER_LOG: log })
+  await composer.click()
+  await window.getByRole("button", { name: "Voice input", exact: true }).click()
+  await expect(window.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible()
+  await window.getByTestId("new-session").click()
+  await expect(window.getByTestId("new-session-view")).toBeVisible()
+  await expect.poll(() => readFileSync(log, "utf8")).toBe("superwhisper://record/start\nsuperwhisper://record/stop\n")
+  rmSync(log, { force: true })
+})

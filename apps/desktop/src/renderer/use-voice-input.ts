@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useMachine } from "@xstate/react"
 import type { ComposerVoiceInput } from "@jingler/ui"
-import { startRecording, type VoiceRecording } from "./voice-capture.js"
+import { discardRecording, startRecording, type VoiceRecording } from "./voice-capture.js"
 import { voiceInputMachine } from "./voice-input-machine.js"
 
 /** Mic button state for one composer; the transcript is appended to its text, never sent. */
@@ -39,7 +39,7 @@ export const DEFAULT_HOLD_KEY = "F9"
 export function useVoiceInput(onText: (update: (text: string) => string) => void, rpc: VoiceRpc, config?: { readonly voice?: VoicePrefs | undefined } | null): ComposerVoiceInput {
   const prefsRef = useRef<VoicePrefs>({})
   prefsRef.current = config?.voice ?? {}
-  const [state, send] = useMachine(voiceInputMachine, {
+  const [state, send, actor] = useMachine(voiceInputMachine, {
     input: {
       start: async () => {
         // Captured before any await: the mic button disables while starting, which drops focus to <body>.
@@ -52,6 +52,11 @@ export function useVoiceInput(onText: (update: (text: string) => string) => void
       onTranscript: (text) => onText((current) => current === "" ? text : `${current} ${text}`)
     }
   })
+  // Stopping the actor doesn't touch the recording. Only `recording` still owns it: `transcribing` already called stop().
+  useEffect(() => () => {
+    const snapshot = actor.getSnapshot()
+    if (snapshot.matches("recording") && snapshot.context.recording) discardRecording(snapshot.context.recording)
+  }, [actor])
   const holdKey = prefsRef.current.holdKey ?? DEFAULT_HOLD_KEY
   useEffect(() => {
     if (holdKey === "none") return
