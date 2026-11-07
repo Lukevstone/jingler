@@ -1,5 +1,12 @@
 # @jingler/desktop
 
+## 0.22.4
+
+### Patch Changes
+
+- e9e7000: Voice input now works in the Home composer, including Superwhisper and the hold-to-talk key. Leaving a composer mid-dictation now releases the microphone or stops Superwhisper.
+  - @jingler/plannotator-ext@0.22.4
+
 ## 0.22.3
 
 ### Patch Changes
