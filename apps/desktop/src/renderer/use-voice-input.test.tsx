@@ -83,3 +83,17 @@ it("holds the configured key to talk, and removes its listeners on unmount", asy
   add.mockRestore()
   remove.mockRestore()
 })
+
+it("hands the transcript to the latest onText, not the one from first render", async () => {
+  vi.mocked(startRecording).mockImplementation(async () => fakeRecording())
+  const first = vi.fn()
+  const latest = vi.fn()
+  const rpc = fakeRpc()
+  const { result, rerender } = renderHook(({ onText }) => useVoiceInput(onText, rpc), { initialProps: { onText: first } })
+  rerender({ onText: latest })
+  act(() => result.current.onToggle())
+  await waitFor(() => expect(result.current.status).toBe("recording"))
+  act(() => result.current.onToggle())
+  await waitFor(() => expect(latest).toHaveBeenCalledOnce())
+  expect(first).not.toHaveBeenCalled()
+})

@@ -870,6 +870,7 @@ function getActiveTabContext(active: Session) {
               requestedSource={requestedNewSession?.source}
               requestedBaseBranch={requestedNewSession?.baseBranch}
               requestedIsolation={requestedNewSession?.isolation}
+              voiceProvider={props.homeVoiceProvider}
               providerCatalog={providerConnections?.catalog}
               agentEndpointCatalog={agentEndpointCatalog}
               defaultConnectionId={providerConnections?.defaultConnectionId}

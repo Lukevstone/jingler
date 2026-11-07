@@ -39,6 +39,9 @@ export const DEFAULT_HOLD_KEY = "F9"
 export function useVoiceInput(onText: (update: (text: string) => string) => void, rpc: VoiceRpc, config?: { readonly voice?: VoicePrefs | undefined } | null): ComposerVoiceInput {
   const prefsRef = useRef<VoicePrefs>({})
   prefsRef.current = config?.voice ?? {}
+  // The machine's deps are read once at actor creation; route through a ref so a caller's closure stays current.
+  const onTextRef = useRef(onText)
+  onTextRef.current = onText
   const [state, send, actor] = useMachine(voiceInputMachine, {
     input: {
       start: async () => {
@@ -49,7 +52,7 @@ export function useVoiceInput(onText: (update: (text: string) => string) => void
         return startRecording()
       },
       transcribe: async (wav) => wav === "" ? "" : (await rpc.voiceTranscribe(wav, prefsRef.current.language, prefsRef.current.modelId)).text,
-      onTranscript: (text) => onText((current) => current === "" ? text : `${current} ${text}`)
+      onTranscript: (text) => onTextRef.current((current) => current === "" ? text : `${current} ${text}`)
     }
   })
   // Stopping the actor doesn't touch the recording. Only `recording` still owns it: `transcribing` already called stop().
