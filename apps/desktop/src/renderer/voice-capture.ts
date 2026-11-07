@@ -10,6 +10,12 @@ export interface VoiceRecording {
   readonly cancel?: () => void
 }
 
+/** Release a recording nobody will transcribe. Superwhisper has no discard deep link, so it can only be stopped. */
+export const discardRecording = (recording: VoiceRecording): void => {
+  if (recording.cancel) recording.cancel()
+  else void recording.stop().catch(() => {})
+}
+
 export const encodeWav = (samples: Float32Array): Uint8Array => {
   const out = new DataView(new ArrayBuffer(44 + samples.length * 2))
   const tag = (offset: number, text: string) => {

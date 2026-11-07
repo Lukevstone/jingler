@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import type { ComponentType, ReactNode } from "react"
 import type { Project, Session, SessionActivity } from "@jingler/core"
 import { CircleDot, FolderGit2, GitFork, GitPullRequest } from "lucide-react"
 import { HomeCards } from "../composites/home-cards.js"
@@ -7,7 +7,16 @@ import { CHECKOUT_OPTIONS, ChipRow, FromChip } from "../composites/new-workspace
 import { Button } from "../components/button.js"
 import { Kbd } from "../components/kbd.js"
 import { ChipMenu } from "../components/chip-menu.js"
-import { Composer } from "../composites/composer.js"
+import { Composer, type ComposerVoiceInput } from "../composites/composer.js"
+
+/**
+ * Host component that owns dictation for Home's composer. Mounted only while Home shows, so its global
+ * hold-to-talk key and 100ms level ticks stay out of the app root; `onText` updates the composer's text.
+ */
+export type HomeVoiceProvider = ComponentType<{
+  onText: (update: (text: string) => string) => void
+  children: (voice: ComposerVoiceInput) => ReactNode
+}>
 
 export const greetingFor = (now: Date, firstName?: string) => {
   const hour = now.getHours()
@@ -60,10 +69,13 @@ export function EmptyConversation({
   onOpenSession,
   allowFor,
   importCard,
-  today
+  today,
+  voiceProvider: VoiceProvider
 }: {
   /** Home › To Do + My PRs, owned by the host (null = none). */
   today?: ReactNode
+  /** Adds the mic to the composer; omitted hosts get no voice input. */
+  voiceProvider?: HomeVoiceProvider
   sessions?: ReadonlyArray<Session>
   liveActivity?: Record<string, SessionActivity>
   onOpenSession?: (sessionId: string) => void
@@ -114,6 +126,21 @@ export function EmptyConversation({
       ...(baseBranch ? { baseBranch } : {}),
       isolation
     })
+  const composer = (voiceInput?: ComposerVoiceInput) => (
+    <Composer
+      preserveDraftOnSend
+      autoFocus
+      focusKey="home"
+      value={draft}
+      onValueChange={setDraft}
+      onSend={(text) => text.trim() && start(text.trim(), source)}
+      placeholder="What should we build?"
+      inputLabel="What should we build?"
+      repo={selectedProject?.name}
+      branch={baseBranch || undefined}
+      voiceInput={voiceInput}
+    />
+  )
   return (
     <div className="flex flex-1 flex-col bg-editor">
       <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 sm:px-10">
@@ -123,18 +150,7 @@ export function EmptyConversation({
           </h1>
 
           <div ref={composerRef} className="flex flex-col gap-2">
-            <Composer
-              preserveDraftOnSend
-              autoFocus
-              focusKey="home"
-              value={draft}
-              onValueChange={setDraft}
-              onSend={(text) => text.trim() && start(text.trim(), source)}
-              placeholder="What should we build?"
-              inputLabel="What should we build?"
-              repo={selectedProject?.name}
-              branch={baseBranch || undefined}
-            />
+            {VoiceProvider ? <VoiceProvider onText={setDraft}>{composer}</VoiceProvider> : composer()}
             <div className="flex items-center gap-2">
               <ChipRow>
                 {projects.length > 0 && (

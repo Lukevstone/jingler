@@ -31,6 +31,17 @@ describe("voiceInputMachine", () => {
     expect(deps.onTranscript).not.toHaveBeenCalled()
   })
 
+  it("cancelling while the mic opens discards the recording when it arrives", async () => {
+    const recording = { stop: vi.fn(async () => ""), cancel: vi.fn(), level: () => 0 }
+    let open: (value: typeof recording) => void = () => {}
+    const { actor } = setup({ start: () => new Promise((resolve) => { open = resolve }) })
+    actor.send({ type: "TOGGLE" })
+    actor.send({ type: "CANCEL" })
+    open(recording)
+    await vi.waitFor(() => expect(recording.cancel).toHaveBeenCalledOnce())
+    expect(actor.getSnapshot().matches("idle")).toBe(true)
+  })
+
   it("lands in noModel on a no-model failure and in error otherwise", async () => {
     const a = setup({ transcribe: async () => { throw { reason: "no-model", message: "m" } } })
     a.actor.send({ type: "TOGGLE" })

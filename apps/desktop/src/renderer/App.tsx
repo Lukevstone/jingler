@@ -188,6 +188,7 @@ import { useDebugSessions } from "./debug-session.js";
 import { repositoryAccess } from "./github-connection-machine.js";
 import { useGitHubConnection } from "./use-github-connection.js";
 import { HomeTodayPanel } from "./home-today-panel.js";
+import { VoiceHomeProvider } from "./voice-home-provider.js";
 import { GitHubFeedbackRouter } from "./github-feedback.js";
 import { applyRelayHealthUpdate } from "./github-relay-health.js";
 
@@ -1771,6 +1772,7 @@ function AuthedApp({
         allowFor={decideGateAllowFor}
         importCard={homeImportCard}
         renderHomeToday={() => <HomeTodayPanel />}
+        homeVoiceProvider={VoiceHomeProvider}
         interruptedSessions={interruptedSessions}
         chatActivities={chatActivities}
         prStates={prStates}

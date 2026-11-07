@@ -23,7 +23,7 @@ import { activeCheckoutOf, checkoutsOf } from "@jingler/core"
 import type { FilterMenuAction } from "../components/filter-menu.js"
 import { SessionSplit } from "../app/session-split.js"
 import type { SplitGroup } from "../app/split-layout.js"
-import { EmptyConversation, type HomeStart } from "./empty-conversation.js"
+import { EmptyConversation, type HomeStart, type HomeVoiceProvider } from "./empty-conversation.js"
 import type { ConversationPaneCtx } from "./session-pane.js"
 import { BUILTIN_TAB, type TabContribution, type TabKey } from "../app/tab-contributions.js"
 import type { PaneContribution } from "../app/pane-contributions.js"
@@ -152,6 +152,8 @@ export interface SessionConversationProps {
   importCard?: ReactNode
   /** Home › To Do + My PRs element. */
   homeToday?: ReactNode
+  /** Home › owns dictation for the composer. */
+  homeVoiceProvider?: HomeVoiceProvider
   /** Sessions whose last run was cut off by a restart. */
   interruptedSessions?: ReadonlySet<string>
   /** Live activity by session, then chat, for the sidebar tree. */
@@ -363,6 +365,7 @@ export function SessionConversation(props: SessionConversationProps) {
             allowFor={props.allowFor}
             importCard={props.importCard}
             today={props.homeToday}
+            voiceProvider={props.homeVoiceProvider}
             onOpenSession={props.onSelectSession}
           />)
            return (<SessionSplit

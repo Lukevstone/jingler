@@ -1,5 +1,5 @@
 import { assign, fromCallback, fromPromise, setup } from "xstate"
-import type { VoiceRecording } from "./voice-capture.js"
+import { discardRecording, type VoiceRecording } from "./voice-capture.js"
 
 export interface VoiceInputDeps {
   /** Ask the OS for mic access, then begin capturing. */
@@ -38,7 +38,12 @@ export const voiceInputMachine = setup({
       const id = setInterval(() => sendBack({ type: "TICK" }), 100)
       return () => clearInterval(id)
     }),
-    start: fromPromise(({ input }: { input: VoiceInputDeps }) => input.start()),
+    start: fromPromise(async ({ input, signal }: { input: VoiceInputDeps; signal: AbortSignal }) => {
+      const recording = await input.start()
+      // Cancelled or unmounted while the mic was opening: onDone will never fire, so nothing else owns this recording.
+      if (signal.aborted) discardRecording(recording)
+      return recording
+    }),
     transcribe: fromPromise(async ({ input }: { input: { deps: VoiceInputDeps; recording: VoiceRecording } }) =>
       input.deps.transcribe(await input.recording.stop())
     )
