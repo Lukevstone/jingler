@@ -159,3 +159,41 @@ test("the chosen language reaches the whisper CLI", async ({ launchApp }) => {
   expect(readFileSync(join(tmpdir(), "voice-args.log"), "utf8")).toContain("-l de")
   rmSync(join(tmpdir(), "voice-args.log"), { force: true })
 })
+
+const openHome = async (launchApp: Parameters<Parameters<typeof test>[2]>[0]["launchApp"], e2eEnv: Record<string, string>) => {
+  const launched = await launchApp({ configured: true, withRepo: true, e2eEnv })
+  await expect(appShell(launched.window)).toBeVisible()
+  return { ...launched, composer: launched.window.getByRole("textbox", { name: "What should we build?" }) }
+}
+
+test("dictating on Home puts the transcript in the composer without starting a workspace", async ({ launchApp }) => {
+  const { window, home, composer } = await openHome(launchApp, { JINGLER_WHISPER_BIN: whisper })
+  const models = join(home, "jingler", "models", "whisper")
+  mkdirSync(models, { recursive: true })
+  writeFileSync(join(models, "ggml-base.bin"), "fake")
+
+  await composer.fill("Please")
+  await window.getByRole("button", { name: "Voice input", exact: true }).click()
+  await expect(window.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible()
+  await window.waitForTimeout(800)
+  await window.getByRole("button", { name: "Stop recording", exact: true }).click()
+
+  await expect(composer).toHaveValue("Please add a retry to the login test", { timeout: 20_000 })
+  await expect(window.getByTestId("new-session-view")).toHaveCount(0)
+})
+
+test("with Superwhisper installed Home's mic drives it and its paste lands in the composer", async ({ launchApp }) => {
+  const log = join(tmpdir(), `superwhisper-home-${Date.now()}.log`)
+  const { window, composer } = await openHome(launchApp, { JINGLER_E2E_SUPERWHISPER_LOG: log })
+  await composer.click()
+  await window.getByRole("button", { name: "Voice input", exact: true }).click()
+  await expect(window.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible()
+  await expect(window.getByRole("button", { name: "Cancel recording", exact: true })).toHaveCount(0)
+  await window.getByRole("button", { name: "Stop recording", exact: true }).click()
+  await expect(window.getByRole("button", { name: "Voice input", exact: true })).toBeEnabled()
+  await expect.poll(() => readFileSync(log, "utf8")).toBe("superwhisper://record/start\nsuperwhisper://record/stop\n")
+  await expect(composer).toBeFocused()
+  await window.keyboard.insertText("pasted by superwhisper")
+  await expect(composer).toHaveValue("pasted by superwhisper")
+  rmSync(log, { force: true })
+})

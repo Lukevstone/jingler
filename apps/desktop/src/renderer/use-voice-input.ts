@@ -1,11 +1,10 @@
 import { useEffect, useRef } from "react"
 import { useMachine } from "@xstate/react"
 import type { ComposerVoiceInput } from "@jingler/ui"
-import { getDraft, setDraft } from "./draft-store.js"
 import { startRecording, type VoiceRecording } from "./voice-capture.js"
 import { voiceInputMachine } from "./voice-input-machine.js"
 
-/** Mic button state for one chat's composer; the transcript is appended to the draft, never sent. */
+/** Mic button state for one composer; the transcript is appended to its text, never sent. */
 export interface VoiceRpc {
   voiceRequestMicrophone: () => Promise<boolean>
   voiceTranscribe: (wavBase64: string, language?: string, modelId?: string) => Promise<{ text: string }>
@@ -36,8 +35,8 @@ export interface VoicePrefs {
 
 export const DEFAULT_HOLD_KEY = "F9"
 
-/** `config` is the workspace config; only its `voice` prefs are read. */
-export function useVoiceInput(chatId: string, rpc: VoiceRpc, config?: { readonly voice?: VoicePrefs | undefined } | null): ComposerVoiceInput {
+/** `onText` applies an update to the composer's text; `config` is the workspace config, and only its `voice` prefs are read. */
+export function useVoiceInput(onText: (update: (text: string) => string) => void, rpc: VoiceRpc, config?: { readonly voice?: VoicePrefs | undefined } | null): ComposerVoiceInput {
   const prefsRef = useRef<VoicePrefs>({})
   prefsRef.current = config?.voice ?? {}
   const [state, send] = useMachine(voiceInputMachine, {
@@ -50,10 +49,7 @@ export function useVoiceInput(chatId: string, rpc: VoiceRpc, config?: { readonly
         return startRecording()
       },
       transcribe: async (wav) => wav === "" ? "" : (await rpc.voiceTranscribe(wav, prefsRef.current.language, prefsRef.current.modelId)).text,
-      onTranscript: (text) => {
-        const current = getDraft(chatId)
-        setDraft(chatId, { ...current, text: current.text === "" ? text : `${current.text} ${text}` })
-      }
+      onTranscript: (text) => onText((current) => current === "" ? text : `${current} ${text}`)
     }
   })
   const holdKey = prefsRef.current.holdKey ?? DEFAULT_HOLD_KEY

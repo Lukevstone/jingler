@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import type { Project } from "@jingler/core"
-import { EmptyConversation, greetingFor } from "./empty-conversation.js"
+import { EmptyConversation, greetingFor, type HomeVoiceProvider } from "./empty-conversation.js"
 
 afterEach(cleanup)
 
@@ -59,4 +59,23 @@ it("sends from the shared Composer's send button with the draft and chip choices
   fireEvent.change(screen.getByRole("textbox", { name: "What should we build?" }), { target: { value: "ship it" } })
   fireEvent.click(screen.getByRole("button", { name: "Send ↵" }))
   expect(start).toHaveBeenCalledWith({ draft: "ship it", projectId: "p1", baseBranch: "main", isolation: "worktree" })
+})
+
+it("shows the mic only with a voice provider, and dictation appends to what's typed without sending", () => {
+  const start = vi.fn()
+  let dictate: (text: string) => void = () => {}
+  const Voice: HomeVoiceProvider = ({ onText, children }) => {
+    dictate = (text) => onText((current) => `${current} ${text}`)
+    return children({ status: "idle", onToggle: () => {}, onDismiss: () => {} })
+  }
+  const { rerender } = render(<EmptyConversation sessions={[]} liveActivity={{}} onOpenSession={() => {}} onStartWithPrompt={start} />)
+  expect(screen.queryByRole("button", { name: "Voice input" })).toBeNull()
+
+  rerender(<EmptyConversation sessions={[]} liveActivity={{}} onOpenSession={() => {}} onStartWithPrompt={start} voiceProvider={Voice} />)
+  expect(screen.getByRole("button", { name: "Voice input" })).toBeTruthy()
+  const box = screen.getByRole("textbox", { name: "What should we build?" }) as HTMLTextAreaElement
+  fireEvent.change(box, { target: { value: "Please" } })
+  act(() => dictate("add a retry"))
+  expect(box.value).toBe("Please add a retry")
+  expect(start).not.toHaveBeenCalled()
 })

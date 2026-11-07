@@ -1,4 +1,4 @@
-import type { HomeStart } from "../screens/empty-conversation.js"
+import type { HomeStart, HomeVoiceProvider } from "../screens/empty-conversation.js"
 import type { UserMenuProps } from "../composites/user-menu.js"
 import type { SubagentFleetNode } from "@jingler/core"
 import type { UseSessionTerminals } from "./terminal-panel.js"
@@ -242,6 +242,8 @@ export interface JinglerAppProps {
   importCard?: ReactNode
   /** Home › To Do + My PRs; given the action that opens the pull request inbox. */
   renderHomeToday?: () => ReactNode
+  /** Home › owns dictation for the composer. */
+  homeVoiceProvider?: HomeVoiceProvider
   /** Sessions whose last run was cut off by a restart. */
   interruptedSessions?: ReadonlySet<string>
   /** Live activity by session, then chat, for the sidebar tree. */
@@ -616,6 +618,7 @@ onOpenGithubSettings: providerConnections ? () => openSettings("github") : undef
         allowFor={props.allowFor}
         importCard={props.importCard}
         homeToday={props.renderHomeToday?.()}
+        homeVoiceProvider={props.homeVoiceProvider}
         interruptedSessions={props.interruptedSessions}
         chatActivities={chatActivities}
         prStates={prStates}
