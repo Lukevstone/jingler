@@ -6,6 +6,7 @@ export const TERMINAL_SEARCH_HIGHLIGHT_LIMIT = 1_000
 
 /** UI state only; the host supplies the terminal's synchronous search actions. */
 export const terminalSearchMachine = setup({
+  // SAFETY: XState reads these assertions as type metadata; createMachine initializes the runtime context below.
   types: {
     context: {} as TerminalSearchResults & { query: string; focusRevision: number },
     events: {} as

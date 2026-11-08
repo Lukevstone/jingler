@@ -8,6 +8,8 @@ import { matchGlobalSearchChord } from "@jingler/ui"
 import { terminalSearchMachine, terminalSearchCount, TERMINAL_SEARCH_HIGHLIGHT_LIMIT } from "./terminal-search-machine.js"
 
 const MULTILINE = /[\r\n]/u
+export type TerminalSearchHost = Pick<Terminal, "getSelection" | "focus" | "loadAddon">
+const makeSearchAddon = () => new SearchAddon({ highlightLimit: TERMINAL_SEARCH_HIGHLIGHT_LIMIT })
 
 const keyIntent = (event: KeyboardEvent): "OPEN" | "CLOSE" | "NEXT" | "PREVIOUS" | null => {
   if (event.isComposing) return null
@@ -18,7 +20,7 @@ const keyIntent = (event: KeyboardEvent): "OPEN" | "CLOSE" | "NEXT" | "PREVIOUS"
   return null
 }
 
-const selectedQuery = (term: Terminal, open: boolean): string | undefined => {
+const selectedQuery = (term: TerminalSearchHost, open: boolean): string | undefined => {
   if (open) return undefined
   const selection = term.getSelection()
   return selection && !MULTILINE.test(selection) ? selection : undefined
@@ -36,7 +38,7 @@ const searchOptions = (palette: TerminalPalette, incremental: boolean): ISearchO
 })
 
 /** The addon shares its terminal's lifetime; closing Find only clears its decorations. */
-export function useTerminalSearch(term: Terminal | null, active: boolean, palette: TerminalPalette, root: RefObject<HTMLDivElement | null>) {
+export function useTerminalSearch(term: TerminalSearchHost | null, active: boolean, palette: TerminalPalette, root: RefObject<HTMLDivElement | null>, createSearch: () => SearchAddon = makeSearchAddon) {
   const inputRef = useRef<HTMLInputElement>(null)
   const addonRef = useRef<SearchAddon | null>(null)
   const terminalRef = useRef(term)
@@ -63,7 +65,7 @@ export function useTerminalSearch(term: Terminal | null, active: boolean, palett
 
   useEffect(() => {
     if (!term) return
-    const addon = new SearchAddon({ highlightLimit: TERMINAL_SEARCH_HIGHLIGHT_LIMIT })
+    const addon = createSearch()
     term.loadAddon(addon)
     addonRef.current = addon
     const subscription = addon.onDidChangeResults((results) => send({ type: "RESULTS", ...results }))
@@ -73,7 +75,7 @@ export function useTerminalSearch(term: Terminal | null, active: boolean, palett
       if (addonRef.current === addon) addonRef.current = null
       addon.dispose()
     }
-  }, [term, send])
+  }, [term, createSearch, send])
 
   useEffect(() => { if (!active) send({ type: "HIDE" }) }, [active, send])
   useEffect(() => { paletteRef.current = palette; send({ type: "REFRESH" }) }, [palette, send])
