@@ -27,6 +27,7 @@ const openTerminal = async (window: Page) => {
   await expect(window.locator(".xterm").first()).toBeVisible()
 }
 const findField = (window: Page) => window.getByPlaceholder("Find in terminal…", { exact: true })
+const findCount = (window: Page) => window.getByRole("region", { name: "Find in terminal", exact: true }).getByRole("status")
 
 test("Find searches real output literally, wraps through matches, and returns keyboard control to the shell", async ({ launchApp }, testInfo) => {
   const { window, repoPath } = await launchApp({ configured: true, withRepo: true, sessions })
@@ -37,7 +38,7 @@ test("Find searches real output literally, wraps through matches, and returns ke
   await expect(find).toBeFocused()
   await expect(window.getByRole("dialog", { name: "Command palette" })).toHaveCount(0)
   await find.fill(QUERY)
-  const count = window.getByRole("status")
+  const count = findCount(window)
   await expect(count).toHaveText("1 of 3")
   await find.press("Enter")
   await expect(count).toHaveText("2 of 3")
@@ -76,7 +77,7 @@ test("Find state belongs to one terminal and closes when switching tabs", async 
   await printOutput(window, `${QUERY} in the first terminal\n`)
   await window.keyboard.press("Meta+f")
   await findField(window).fill(QUERY)
-  await expect(window.getByRole("status")).toHaveText("1 of 1")
+  await expect(findCount(window)).toHaveText("1 of 1")
   await window.getByRole("button", { name: "New tab", exact: true }).last().click()
   await window.getByTestId("new-tab-option-terminal").click()
   await expect(window.getByRole("tab", { name: "zsh 2", exact: true })).toBeVisible()
@@ -85,13 +86,13 @@ test("Find state belongs to one terminal and closes when switching tabs", async 
   await window.keyboard.press("Meta+f")
   await expect(findField(window)).toHaveValue("")
   await findField(window).fill(QUERY)
-  await expect(window.getByRole("status")).toHaveText("No matches")
+  await expect(findCount(window)).toHaveText("No matches")
   await window.getByRole("tab", { name: "zsh", exact: true }).click()
   await expect(findField(window)).toHaveCount(0)
   await window.getByRole("textbox", { name: "Terminal input", exact: true }).click()
   await window.keyboard.press("Meta+f")
   await expect(findField(window)).toHaveValue(QUERY)
-  await expect(window.getByRole("status")).toHaveText("1 of 1")
+  await expect(findCount(window)).toHaveText("1 of 1")
 })
 
 test("Find works in an agent command's read-only terminal", async ({ launchApp }) => {
@@ -111,7 +112,7 @@ test("Find works in an agent command's read-only terminal", async ({ launchApp }
   await window.locator(".xterm").first().click()
   await window.keyboard.press("Meta+f")
   await findField(window).fill("passed")
-  await expect(window.getByRole("status")).toHaveText("1 of 1")
+  await expect(findCount(window)).toHaveText("1 of 1")
   await findField(window).press("Escape")
   await expect(findField(window)).toHaveCount(0)
   await expect(window.getByTestId("terminal-exited").getByRole("button", { name: "Restart" })).toHaveCount(0)
