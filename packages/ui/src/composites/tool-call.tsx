@@ -53,6 +53,11 @@ const workModeTitle = (args: Record<string, unknown> | null | undefined): string
   return typeof args?.reason === "string" && args.reason ? `Switched to ${mode}, ${args.reason}` : `Switched to ${mode}`
 }
 
+const conversationLabel = (toolName: string, args: Record<string, unknown> | null | undefined): ToolCallLabelResult => ({
+  title: toolName === "conversation_search" ? "Search saved chats" : "Read saved chat",
+  detail: typeof args?.query === "string" ? args.query : null
+})
+
 /**
  * A tool call's title and secondary line. `intent` (agent-written, present
  * tense) always wins the title when present; otherwise derive a label from
@@ -78,6 +83,9 @@ export function toolCallLabel({ toolName, args, intent, cwd }: ToolCallLabelInpu
     }
     case "jingler_set_work_mode":
       return { title: workModeTitle(args), detail: null }
+    case "conversation_search":
+    case "conversation_read":
+      return conversationLabel(toolName, args)
     default:
       return { title: toolName, detail }
   }
