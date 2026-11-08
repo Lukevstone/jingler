@@ -7,9 +7,9 @@ interface PopoverGeometry {
   readonly viewport: { readonly width: number; readonly height: number }
 }
 
-const oppositeSide: Record<PopoverSide, PopoverSide> = {
+const oppositeSide = {
   top: "bottom", bottom: "top", left: "right", right: "left"
-}
+} satisfies Record<PopoverSide, PopoverSide>
 
 /** Keep the preferred anchor when it fits; otherwise use the roomier side and scroll. */
 export function positionPopover(
