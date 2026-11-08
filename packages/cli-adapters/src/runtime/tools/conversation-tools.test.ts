@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { Message } from "@jingler/core"
-import { Effect, Layer } from "effect"
+import { ConversationSearchPage, type Message } from "@jingler/core"
+import { Effect, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { SessionStore } from "../../sessions.js"
 import { withTempRoot } from "../../test-support.js"
@@ -112,7 +112,7 @@ describe("agent conversation history", () => {
     const result = await Effect.runPromise(registry.execute({ id: "conversation_search", arguments: { query: "quartz capybara" }, role: "plan", mode: "plan" }))
     expect(result.status).toBe("success")
     expect(result.value).toMatchObject({ hits: expect.any(Array), hasMore: true })
-    expect((result.value as { hits: unknown[] }).hits).toHaveLength(20)
+    expect(Schema.decodeUnknownSync(ConversationSearchPage)(result.value).hits).toHaveLength(20)
     const invalid = await Effect.runPromise(registry.execute({ id: "conversation_search", arguments: { query: "   " }, role: "conversation", mode: "ask" }))
     expect(invalid.error?.code).toBe("invalid-input")
   })

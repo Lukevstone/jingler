@@ -8,6 +8,7 @@ const emptyPage: ConversationSearchPage = { hits: [], hasMore: false }
 
 /** A new query or a closed palette cancels the previous request and its debounce. */
 export const conversationSearchMachine = setup({
+  // SAFETY: XState reads these assertions as type metadata; createMachine initializes the runtime context below.
   types: {
     context: {} as ConversationSearchRequest & { load: ConversationSearchLoader | null; page: ConversationSearchPage; failed: boolean },
     events: {} as ({ type: "QUERY"; load: ConversationSearchLoader } & ConversationSearchRequest) | { type: "RESET" }

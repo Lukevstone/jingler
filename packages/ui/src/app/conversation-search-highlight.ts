@@ -4,6 +4,8 @@ const OMITTED_TEXT = "button, [aria-hidden=true], script, style, svg"
 const TEXT_BLOCK = "p, li, pre, td, th, blockquote, h1, h2, h3, h4, h5, h6"
 
 interface TextSegment { readonly node: Text; readonly start: number; readonly end: number }
+const isText = (node: Node): node is Text => node.nodeType === Node.TEXT_NODE
+const isElement = (node: Node): node is Element => node.nodeType === Node.ELEMENT_NODE
 
 /** Read prose and code, excluding author labels and Markdown's action buttons. */
 function renderedText(root: HTMLElement) {
@@ -12,8 +14,8 @@ function renderedText(root: HTMLElement) {
   let text = ""
   let previousBlock: Element | null = null
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (node.nodeType !== Node.TEXT_NODE) {
-      if ((node as Element).matches(".sb-md br")) text += " "
+    if (!isText(node)) {
+      if (isElement(node) && node.matches(".sb-md br")) text += " "
       continue
     }
     const parent = node.parentElement
@@ -23,9 +25,8 @@ function renderedText(root: HTMLElement) {
     if (previousBlock && previousBlock !== block) text += " "
     previousBlock = block
     const start = text.length
-    const textNode = node as Text
-    text += textNode.data
-    segments.push({ node: textNode, start, end: text.length })
+    text += node.data
+    segments.push({ node, start, end: text.length })
   }
   return { text, segments }
 }

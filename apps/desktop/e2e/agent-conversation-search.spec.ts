@@ -21,7 +21,7 @@ for (const runtime of ["pi", "claude"] as const) {
     const { window } = await launchApp({
       configured: true, withRepo: true,
       piFixture: { scenarioId: "conversation-search", authRoute: "openai-codex-oauth" },
-      ...(runtime === "claude" ? { e2eEnv: { JINGLER_CLAUDE_BINARY: binary } } : {}),
+      e2eEnv: runtime === "claude" ? { JINGLER_CLAUDE_BINARY: binary } : undefined,
       sessions: ({ repoPath }) => [
         session("current", repoPath),
         { ...session("archive", repoPath), archived: true, closedChats: [chat("closed-chat")] },

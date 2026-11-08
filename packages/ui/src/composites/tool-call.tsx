@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Option, Schema } from "effect"
 import { Check, ChevronDown, ChevronRight, CircleStop, LoaderCircle, SquareTerminal, X } from "lucide-react"
 import { cn } from "../lib/cn.js"
 import { Spin } from "../components/spin.js"
@@ -53,10 +54,14 @@ const workModeTitle = (args: Record<string, unknown> | null | undefined): string
   return typeof args?.reason === "string" && args.reason ? `Switched to ${mode}, ${args.reason}` : `Switched to ${mode}`
 }
 
-const conversationLabel = (toolName: string, args: Record<string, unknown> | null | undefined): ToolCallLabelResult => ({
-  title: toolName === "conversation_search" ? "Search saved chats" : "Read saved chat",
-  detail: typeof args?.query === "string" ? args.query : null
-})
+const decodeConversationQuery = Schema.decodeUnknownOption(Schema.Struct({ query: Schema.String }))
+const conversationLabel = (toolName: string, args: ToolCallLabelInput["args"]): ToolCallLabelResult => {
+  const parsed = decodeConversationQuery(args)
+  return {
+    title: toolName === "conversation_search" ? "Search saved chats" : "Read saved chat",
+    detail: Option.isSome(parsed) ? parsed.value.query : null
+  }
+}
 
 /**
  * A tool call's title and secondary line. `intent` (agent-written, present

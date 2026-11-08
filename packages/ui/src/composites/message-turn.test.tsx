@@ -139,7 +139,7 @@ describe("MessageTurn conversation recall", () => {
 
   it("shows one quiet disclosure for a search/read pair and keeps both calls inspectable", async () => {
     render(<MessageTurn message={recallMessage([tool("conversation_search"), tool("conversation_read"), { _tag: "Text", text: "The earlier decision was to reset the pool." }])} />)
-    const details = screen.getByTestId("conversation-recall") as HTMLDetailsElement
+    const details = screen.getByTestId<HTMLDetailsElement>("conversation-recall")
     expect(details.open).toBe(false)
     expect(screen.getAllByText("Checked earlier chats")).toHaveLength(1)
     expect(screen.getByText("The earlier decision was to reset the pool.")).toBeTruthy()
@@ -152,7 +152,7 @@ describe("MessageTurn conversation recall", () => {
 
   it("updates a running lookup in place without opening its details", () => {
     const view = render(<MessageTurn message={recallMessage([tool("conversation_search", "running")])} />)
-    const details = screen.getByTestId("conversation-recall") as HTMLDetailsElement
+    const details = screen.getByTestId<HTMLDetailsElement>("conversation-recall")
     expect(screen.getByText("Checking earlier chats…")).toBeTruthy()
     view.rerender(<MessageTurn message={recallMessage([tool("conversation_search"), tool("conversation_read")])} />)
     expect(screen.getByTestId("conversation-recall")).toBe(details)
@@ -173,7 +173,7 @@ describe("MessageTurn conversation recall", () => {
   it("keeps a lookup error visible while its internal calls are collapsed", () => {
     render(<MessageTurn message={recallMessage([tool("conversation_search", "error")])} />)
     expect(screen.getByText("Chat lookup had an error")).toBeTruthy()
-    expect((screen.getByTestId("conversation-recall") as HTMLDetailsElement).open).toBe(false)
+    expect(screen.getByTestId<HTMLDetailsElement>("conversation-recall").open).toBe(false)
   })
 })
 

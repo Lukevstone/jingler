@@ -7,7 +7,7 @@ export const CONVERSATION_SEARCH_HIGHLIGHT = "jingler-conversation-search"
 export function useConversationSearchHighlight(rootRef: RefObject<HTMLElement | null>, query: string | undefined) {
   useLayoutEffect(() => {
     const root = rootRef.current
-    if (!root || !query || !globalThis.CSS?.highlights || typeof Highlight === "undefined") return
+    if (!root || !query || !globalThis.CSS?.highlights || !("Highlight" in globalThis)) return
     const registry = CSS.highlights
     let highlight: Highlight | null = null
     let ownedRange: Range | null = null

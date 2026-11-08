@@ -3,6 +3,10 @@ import { assign, fromPromise, setup } from "xstate"
 
 export type ConversationSearchTarget = ConversationSearchHit & { readonly nonce: number; readonly query: string }
 export interface ConversationSearchPreviewPage { readonly messages: ReadonlyArray<Message>; readonly focusIndex: number }
+interface ConversationSearchPreviewContext {
+  readonly target: ConversationSearchTarget | null
+  readonly page: ConversationSearchPreviewPage | null
+}
 const SNIPPET_ELLIPSIS = /^…|…$/gu
 
 /** Positions distinguish legacy duplicate ids. This projection never mutates the live transcript. */
@@ -22,8 +26,9 @@ export function conversationSearchPreviewPage(messages: ReadonlyArray<Message>, 
 
 /** A bounded, read-only history window; the live conversation actor stays untouched. */
 export const conversationSearchPreviewMachine = setup({
+  // SAFETY: XState reads these assertions as type metadata; createMachine initializes the runtime context below.
   types: {
-    context: {} as { target: ConversationSearchTarget | null; page: ConversationSearchPreviewPage | null },
+    context: {} as ConversationSearchPreviewContext,
     events: {} as { type: "OPEN"; target: ConversationSearchTarget } | { type: "CLOSE" }
   },
   actors: { load: fromPromise<ConversationSearchPreviewPage | null, ConversationSearchTarget>(async () => {
